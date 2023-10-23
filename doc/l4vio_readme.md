@@ -1,30 +1,24 @@
 # l4vio_switch, a virtual network switch   {#l4re_servers_vio_switch}
 
 The virtual network switch connects multiple clients with a virtual network
-connection. It uses virtio as the transport mechanism. Each virtual switch port
-implements the host-side of a virtio network device.
+connection. It uses Virtio as the transport mechanism. Each virtual switch port
+implements the host-side of a Virtio network device (virtio-net).
 
 The virtual network switch can be setup to feature exactly one monitor port.
-All traffic passing through the switch is mirrored to the monitor port but a
-client connected via the monitor port cannot send data through this port. An
-optional packet filter can be configured and implemented to filter data sent to
-the monitor port.
+All traffic passing through the switch is mirrored to the monitor port. The
+monitor port is read-only, and has no TX capability.
+An optional packet filter can be configured and implemented to filter data
+sent to the monitor port.
 
-## Building and Configuration
-
-The virtual network switch can be built using the L4Re build system by placing
-this project into the `pkg` directory.
+## Configuration
 
 Certain features of the virtual network switch are configurable at
-compile-time. Configurable features can be found in
-
-    server/switch/Makefile.config
-
-Set an option to *y* to enable that feature or to *n* to disable it.
+compile-time. Configuration is done through the build-time configureation of
+the L4Re build tree.
 
 ## Starting the service
 
-The virtual network switch can be started with Lua like this:
+The virtual network switch can be started in Ned like this:
 
     local switch = L4.default_loader:new_channel();
     L4.default_loader:start(
@@ -35,11 +29,10 @@ The virtual network switch can be started with Lua like this:
     },
     "rom/l4vio_switch");
 
-First an IPC gate (`switch`) is created which is used between the virtual
-network switch and a client to create new virtual ports. The server-side is
-assigned to the mandatory `svr` capability of the virtual network switch. See
-the section below on how to create a new virtual port and connect a client to
-it.
+First a commuication channel (`switch`) is created which is used to create
+virtual network ports. It is connected to the switch component via its
+mandatory `svr` capability. See the section below on how to create a new
+virtual port and connect a client to it.
 
 ### Options
 
@@ -87,9 +80,9 @@ the virtual network switch accepts the following command line options:
 
 ## Connecting a client
 
-Prior to connecting a client to a virtual network port it has to be created
-using the following Lua function. It has to be called on the client side of the
-IPC gate capability whose server side is bound to the virtual network switch.
+First, a virtual network port has to be created using the following Ned-Lua
+function. It has to be called on the commnication channel called `switch`,
+which has been created earlier.
 
     create(obj_type, num_ds [, name, type, vlan])
 
@@ -102,7 +95,7 @@ IPC gate capability whose server side is bound to the virtual network switch.
 * `num_ds`
 
   Specifies the upper limit of the number of dataspaces the client is allowed
-  to register with the virtual network switch for virtio DMA.
+  to register with the virtual network switch for Virtio DMA.
 
 * `name=<name>`
 
@@ -159,8 +152,7 @@ If the `create()` call is successful a new capability which references a
 virtual switch port is returned. A client uses this capability to talk to the
 virtual network switch using the virtio network protocol.
 
-A couple of examples on how to create ports with different properties are
-listed below.
+Here are couple of examples on how to create ports with different properties:
 
     -- normal port with at most 4 data spaces
     net0 = switch:create(0, 4)
