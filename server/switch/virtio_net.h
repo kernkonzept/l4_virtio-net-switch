@@ -113,13 +113,13 @@ public:
   {
     Features hf(0);
     hf.ring_indirect_desc() = true;
-    hf.csum()      = true;
     hf.mrg_rxbuf() = true;
-    hf.host_tso4() = true;
-    hf.host_tso6() = true;
 #if 0
     // disable currently unsupported options, but leave them in for
     // documentation purposes
+    hf.csum()      = true;
+    hf.host_tso4() = true;
+    hf.host_tso6() = true;
     hf.host_ufo()  = true;
     hf.host_ecn()  = true;
 
