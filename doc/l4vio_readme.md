@@ -29,7 +29,7 @@ The virtual network switch can be started in Ned like this:
     },
     "rom/l4vio_switch");
 
-First a commuication channel (`switch`) is created which is used to create
+First a communication channel (`switch`) is created which is used to create
 virtual network ports. It is connected to the switch component via its
 mandatory `svr` capability. See the section below on how to create a new
 virtual port and connect a client to it.
@@ -63,7 +63,7 @@ the virtual network switch accepts the following command line options:
 
 * `-s <num>`, `--size <num>`
 
-  Set the maximum queue size for the device-side virtio queues.
+  Set the maximum queue size for the device-side Virtio queues.
   Must be a power of 2 in the range of 1 to 32768 inclusive.
 
 * `-v`, `--verbose`
@@ -81,7 +81,7 @@ the virtual network switch accepts the following command line options:
 ## Connecting a client
 
 First, a virtual network port has to be created using the following Ned-Lua
-function. It has to be called on the commnication channel called `switch`,
+function. It has to be called on the communication channel called `switch`,
 which has been created earlier.
 
     create(obj_type, num_ds [, name, type, vlan])
@@ -150,7 +150,7 @@ which has been created earlier.
 
 If the `create()` call is successful a new capability which references a
 virtual switch port is returned. A client uses this capability to talk to the
-virtual network switch using the virtio network protocol.
+virtual network switch using the Virtio network protocol.
 
 Here are couple of examples on how to create ports with different properties:
 
