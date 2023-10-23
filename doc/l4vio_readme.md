@@ -13,7 +13,7 @@ sent to the monitor port.
 ## Configuration
 
 Certain features of the virtual network switch are configurable at
-compile-time. Configuration is done through the build-time configureation of
+compile-time. Configuration is done through the build-time configuration of
 the L4Re build tree.
 
 ## Starting the service
