@@ -249,16 +249,17 @@ class Switch_factory : public L4::Epiface_t<Switch_factory, L4::Factory>
    * \param[out] vlan_trunk   List of VLANs if "vlan=trunk=[<id>[,<id]*] is
    *                          present.
    */
-  void handle_opt_arg(L4::Ipc::Varg const &opt, bool &monitor,
-                       char *name, size_t size,
-                       l4_uint16_t &vlan_access,
-                       std::vector<l4_uint16_t> &vlan_trunk,
-                       l4_uint8_t mac[6], bool &mac_set)
+  bool handle_opt_arg(L4::Ipc::Varg const &opt, bool &monitor,
+                      char *name, size_t size,
+                      l4_uint16_t &vlan_access,
+                      std::vector<l4_uint16_t> &vlan_trunk,
+                      l4_uint8_t mac[6], bool &mac_set)
   {
     assert(opt.is_of<char const *>());
     unsigned len = opt.length();
     const char *opt_str = opt.data();
-    Dbg warn(Dbg::Port, Dbg::Warn);
+    Err err(Err::Normal);
+
 
     if (len > 5)
       {
@@ -267,15 +268,18 @@ class Switch_factory : public L4::Epiface_t<Switch_factory, L4::Factory>
             if (!strncmp("type=monitor", opt_str, len))
               {
                 monitor = true;
-                return;
+                return true;
               }
             else if (!strncmp("type=none", opt_str, len))
-              return;
+              return true;
+
+            err.printf("Unknown type '%.*s'\n", opt.length() - 5, opt.data() + 5);
+            return false;
           }
         else if (!strncmp("name=", opt_str, 5))
           {
             snprintf(name, size, "%.*s", opt.length() - 5, opt.data() + 5);
-            return;
+            return true;
           }
         else if (!strncmp("vlan=", opt_str, 5))
           {
@@ -290,8 +294,11 @@ class Switch_factory : public L4::Epiface_t<Switch_factory, L4::Factory>
                 if (next && next == str.len() && vlan_valid_id(vid))
                   vlan_access = vid;
                 else
-                  warn.printf("Invalid VLAN access port id '%.*s'\n",
-                              opt.length(), opt.data());
+                  {
+                    err.printf("Invalid VLAN access port id '%.*s'\n",
+                               opt.length(), opt.data());
+                    return false;
+                  }
               }
             else if ((idx = str.starts_with("trunk=")))
               {
@@ -309,13 +316,19 @@ class Switch_factory : public L4::Epiface_t<Switch_factory, L4::Factory>
                   }
 
                 if (!str.empty())
-                  warn.printf("Invalid VLAN trunk port spec '%.*s'\n",
-                              opt.length(), opt.data());
+                  {
+                    err.printf("Invalid VLAN trunk port spec '%.*s'\n",
+                               opt.length(), opt.data());
+                    return false;
+                  }
               }
             else
-              warn.printf("Invalid VLAN specification..\n");
+              {
+                err.printf("Invalid VLAN specification..\n");
+                return false;
+              }
 
-            return;
+            return true;
           }
         else if (!strncmp("mac=", opt_str, 4))
           {
@@ -324,14 +337,18 @@ class Switch_factory : public L4::Epiface_t<Switch_factory, L4::Factory>
             if (len > OPT_LEN && opt_str[OPT_LEN] == '\0' &&
                 sscanf(opt_str+4, "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx", &mac[0],
                        &mac[1], &mac[2], &mac[3], &mac[4], &mac[5]) == 6)
-              mac_set = true;
-            else
-              warn.printf("Invalid mac address '%.*s'\n", len-4, opt_str+4);
-            return;
+              {
+                mac_set = true;
+                return true;
+              }
+
+            err.printf("Invalid mac address '%.*s'\n", len - 4, opt_str + 4);
+            return false;
           }
       }
 
-    warn.printf("Unknown option '%.*s'\n", opt.length(), opt.data());
+    err.printf("Unknown option '%.*s'\n", opt.length(), opt.data());
+    return false;
   }
 
 public:
@@ -395,11 +412,15 @@ public:
 
     for (L4::Ipc::Varg opt: va)
       {
-        if (opt.is_of<char const *>())
-          handle_opt_arg(opt, monitor, name, sizeof(name), vlan_access,
-                         vlan_trunk, mac, mac_set);
-        else
-          warn.printf("Unexpected type for argument %d\n", arg_n);
+        if (!opt.is_of<char const *>())
+          {
+            Err(Err::Normal).printf("Unexpected type for argument %d\n", arg_n);
+            return -L4_EINVAL;
+          }
+
+        if (!handle_opt_arg(opt, monitor, name, sizeof(name), vlan_access,
+                            vlan_trunk, mac, mac_set))
+          return -L4_EINVAL;
 
         ++arg_n;
       }
