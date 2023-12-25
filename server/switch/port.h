@@ -14,7 +14,6 @@
 #include "mac_addr.h"
 #include "vlan.h"
 
-#include <l4/cxx/unique_ptr>
 #include <l4/cxx/ref_ptr>
 #include <set>
 #include <vector>
@@ -261,32 +260,15 @@ public:
       if (src_port->is_trunk())
         mangle = Virtio_vlan_mangle::remove();
 
-    auto transfer_ptr =
-      cxx::make_unique<Virtio_net_transfer>(request, this, rx_q(), mangle);
-    try
+    // throws Bad_descriptor exception raised in SRC port queue.
+    switch (Virtio_net_transfer::transfer(request, this, rx_q(), mangle))
       {
-        // throws Bad_descriptor exception raised in SRC port queue.
-        switch (transfer_ptr->transfer())
-          {
-          case Virtio_net_transfer::Result::Delivered: [[fallthrough]];
-          case Virtio_net_transfer::Result::Exception: return;
-          case Virtio_net_transfer::Result::Dropped: break;
-          }
-
-        // Drop packet that could not be transferred
-      }
-    catch (L4virtio::Svr::Bad_descriptor &e)
-      {
-        Dbg(Dbg::Port, Dbg::Warn, "REQ")
-          .printf("%s: caught bad descriptor exception: %s - %i"
-                  " -- Signal device error on source device.\n",
-                  __PRETTY_FUNCTION__, e.message(), e.error);
-
-        // Handle partial transfers to destination port.
-        transfer_ptr->rewind_dest_avail();
-        throw;
+      case Virtio_net_transfer::Result::Delivered: [[fallthrough]];
+      case Virtio_net_transfer::Result::Exception: return;
+      case Virtio_net_transfer::Result::Dropped: break;
       }
 
+    // Drop packet that could not be transferred
   }
 };
 /**\}*/

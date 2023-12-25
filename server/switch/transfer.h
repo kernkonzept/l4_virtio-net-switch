@@ -30,11 +30,8 @@
  * `Virtio_net_transfer`s, each representing the delivery to a single
  * destination port.
  *
- * `Virtio_port::handle_request` constructs one `Virtio_net_transfer` for each
- * destination of the request.
- *
- * On destruction, `finish_transfer()` will be called, which, in case of a
- * successful delivery, will trigger the client IRQ of the destination client.
+ * `Virtio_port::handle_request` uses the transfer function to move one
+ * packet to the destination of the request.
  */
 class Virtio_net_transfer
 {
@@ -44,100 +41,117 @@ public:
     Delivered, Exception, Dropped,
   };
 
-private:
-  /*
-   * src description
+  /**
+   * Deliver the request to the destination port
    *
-   * We already looked at the very first buffer to find the target of
-   * the packet. The request processor of the "parent request"
-   * contains the current state of the transaction up to this
-   * point. Since there might be more then one target for the request
-   * we have to keep track of our own state and need our own request
-   * processor instance, which will be initialized using the current
-   * state of the "parent request".
+   * \param request   The associated network request
+   * \param dst_dev   The destination port
+   * \param dst_queue The Receive queue of the destination port
+   * \param mangle    The VLAN packet rewriting handler for the transfer
+   *
+   * \throws L4virtio::Svr::Bad_descriptor  Exception raised in SRC port queue.
    */
-  /** The associated network request */
-  Virtio_net_request::Request_ptr _request;
-  L4virtio::Svr::Request_processor _src_req_proc;
-
-  /* dst description */
-  /** The destination port */
-  Virtio_net *_dst_dev;
-  /** The Receive queue of the destination port */
-  L4virtio::Svr::Virtqueue *_dst_queue;
-  L4virtio::Svr::Virtqueue::Head_desc _dst_head;
-  L4virtio::Svr::Request_processor _dst_req_proc;
-  Virtio_net::Hdr *_dst_header = nullptr;
-
-  /* the buffer descriptors used for this transaction and the amount
-     of bytes copied to the current target descriptor */
-  Buffer _src;
-  Buffer _dst;
-  unsigned _total;
-
-  /* Data structures used to merge rx buffers */
-  /* the list of target descriptors merged into one request for the target */
-  typedef cxx::Pair<L4virtio::Svr::Virtqueue::Head_desc, l4_uint32_t> Consumed_entry;
-  std::vector<Consumed_entry> _consumed;
-  l4_uint16_t _num_merged = 0;
-
-  Virtio_vlan_mangle _mangle;
-
-  bool next_src_buffer()
-  { return _src_req_proc.next(_request->dev()->mem_info(), &_src); }
-
-  bool next_dst_buffer()
-  { return _dst_req_proc.next(_dst_dev->mem_info(), &_dst); }
-
-  Result transfer_loop(Dbg const &trace)
+  static
+  Result transfer(Virtio_net_request::Request_ptr request,
+                  Virtio_net *dst_dev,
+                  L4virtio::Svr::Virtqueue *dst_queue,
+                  Virtio_vlan_mangle &mangle)
   {
-    // throws Bad_descriptor exception (SRC)
-    while (!_src.done() || next_src_buffer())
+    Dbg trace(Dbg::Request, Dbg::Trace, "REQ");
+    trace.printf("Transfer request: %p\n", request.get());
+
+    /*
+     * src description
+     *
+     * We already looked at the very first buffer to find the target of
+     * the packet. The request processor of the "parent request"
+     * contains the current state of the transaction up to this
+     * point. Since there might be more then one target for the request
+     * we have to keep track of our own state and need our own request
+     * processor instance, which will be initialized using the current
+     * state of the "parent request".
+     */
+    L4virtio::Svr::Request_processor src_req_proc = request->get_request_processor();
+
+    /* the buffer descriptors used for this transaction and the amount
+     * of bytes copied to the current target descriptor */
+    Buffer src = request->first_buffer();
+    Buffer dst;
+    int total = 0;
+    l4_uint16_t num_merged = 0;
+    typedef cxx::Pair<L4virtio::Svr::Virtqueue::Head_desc, l4_uint32_t> Consumed_entry;
+    std::vector<Consumed_entry> consumed;
+
+    L4virtio::Svr::Virtqueue::Head_desc dst_head;
+    L4virtio::Svr::Request_processor dst_req_proc;
+    Virtio_net::Hdr *dst_header = nullptr;
+
+    for (;;)
       {
+        try
+          {
+            if (src.done() && !src_req_proc.next(request->dev()->mem_info(), &src))
+              // Request completely copied to destination.
+              break;
+          }
+        catch (L4virtio::Svr::Bad_descriptor &e)
+          {
+            trace.printf("\tTransfer failed, bad descriptor exception, dropping.\n");
+
+            // Handle partial transfers to destination port.
+            if (!consumed.empty())
+              // Partial transfer, rewind to before first descriptor of transfer.
+              dst_queue->rewind_avail(consumed.at(0).first);
+            else if (dst_head)
+              // Partial transfer, still at first _dst_head.
+              dst_queue->rewind_avail(dst_head);
+            throw;
+          }
+
         /* The source data structures are already initialized, the header
-           is consumed and _src stands at the very first real buffer.
+           is consumed and src stands at the very first real buffer.
            Initialize the target data structures if necessary and fill the
            header. */
-        if (!_dst_head)
+        if (!dst_head)
           {
-            if (!_dst_queue->ready())
+            if (!dst_queue->ready())
               return Result::Dropped;
 
-            auto r = _dst_queue->next_avail();
+            auto r = dst_queue->next_avail();
 
             if (L4_UNLIKELY(!r))
               {
                 trace.printf("\tTransfer %p failed, destination queue depleted, dropping.\n",
-                             this);
+                             request.get());
                 // Abort incomplete transfer.
-                if (!_consumed.empty())
-                  _dst_queue->rewind_avail(_consumed.front().first);
+                if (!consumed.empty())
+                  dst_queue->rewind_avail(consumed.front().first);
                 return Result::Dropped;
               }
 
             try
               {
-                _dst_head = _dst_req_proc.start(_dst_dev->mem_info(), r, &_dst);
+                dst_head = dst_req_proc.start(dst_dev->mem_info(), r, &dst);
               }
             catch (L4virtio::Svr::Bad_descriptor &e)
               {
                 Dbg(Dbg::Request, Dbg::Warn, "REQ")
                   .printf("%s: bad descriptor exception: %s - %i"
                           " -- signal device error in destination device %p.\n",
-                          __PRETTY_FUNCTION__, e.message(), e.error, _dst_dev);
+                          __PRETTY_FUNCTION__, e.message(), e.error, dst_dev);
 
-                _dst_dev->device_error();
+                dst_dev->device_error();
                 return Result::Exception; // Must not touch the dst queues anymore.
               }
 
-            if (!_dst_header)
+            if (!dst_header)
               {
-                if (_dst.left < sizeof(Virtio_net::Hdr))
+                if (dst.left < sizeof(Virtio_net::Hdr))
                   throw L4::Runtime_error(-L4_EINVAL,
                                           "Target buffer too small for header");
-                _dst_header = reinterpret_cast<Virtio_net::Hdr *>(_dst.pos);
+                dst_header = reinterpret_cast<Virtio_net::Hdr *>(dst.pos);
                 trace.printf("\t: Copying header to %p (size: %u)\n",
-                             _dst.pos, _dst.left);
+                             dst.pos, dst.left);
                 /*
                  * Header and csum offloading/general segmentation offloading
                  *
@@ -179,157 +193,79 @@ private:
                  * verifying the checksum. Otherwise a packet with an
                  * invalid checksum could be successfully delivered.
                  */
-                _total = sizeof(Virtio_net::Hdr);
-                memcpy(_dst_header, _request->header(), _total);
-                _mangle.rewrite_hdr(_dst_header);
-                _dst.skip(_total);
+                total = sizeof(Virtio_net::Hdr);
+                memcpy(dst_header, request->header(), total);
+                mangle.rewrite_hdr(dst_header);
+                dst.skip(total);
               }
-            ++_num_merged;
+            ++num_merged;
           }
 
         bool has_next_dst_buffer = false;
         try
           {
-            has_next_dst_buffer = next_dst_buffer();
+            has_next_dst_buffer = dst_req_proc.next(dst_dev->mem_info(), &dst);
           }
         catch (L4virtio::Svr::Bad_descriptor &e)
           {
             Dbg(Dbg::Request, Dbg::Warn, "REQ")
               .printf("%s: bad descriptor exception: %s - %i"
                       " -- signal device error in destination device %p.\n",
-                      __PRETTY_FUNCTION__, e.message(), e.error, _dst_dev);
-            _dst_dev->device_error();
+                      __PRETTY_FUNCTION__, e.message(), e.error, dst_dev);
+            dst_dev->device_error();
             return Result::Exception; // Must not touch the dst queues anymore.
           }
 
-        if (!_dst.done() || has_next_dst_buffer)
+        if (!dst.done() || has_next_dst_buffer)
           {
             trace.printf("\t: Copying %p#%p:%u (%x) -> %p#%p:%u  (%x)\n",
-                         _request->dev(),
-                         _src.pos, _src.left, _src.left,
-                         _dst_dev, _dst.pos, _dst.left, _dst.left);
+                         request->dev(),
+                         src.pos, src.left, src.left,
+                         dst_dev, dst.pos, dst.left, dst.left);
 
-            _total += _mangle.copy_pkt(_dst, _src);
+            total += mangle.copy_pkt(dst, src);
           }
         else
           {
             // save descriptor information for later
             trace.printf("\t: Saving descriptor for later\n");
-            _consumed.push_back(Consumed_entry(_dst_head, _total));
-            _total = 0;
-            _dst_head = L4virtio::Svr::Virtqueue::Head_desc();
+            consumed.push_back(Consumed_entry(dst_head, total));
+            total = 0;
+            dst_head = L4virtio::Svr::Virtqueue::Head_desc();
           }
       }
 
-    return Result::Delivered;
-  }
+    /*
+     * Finalize the Request delivery. Call `finish()` on the destination
+     * port's receive queue, which will result in triggering the destination
+     * client IRQ.
+     */
 
-public:
-  // delete copy and assignment
-  Virtio_net_transfer(Virtio_net_transfer const &) = delete;
-  Virtio_net_transfer &operator = (Virtio_net_transfer const &) = delete;
-
-  Virtio_net_transfer(Virtio_net_request::Request_ptr request,
-                      Virtio_net *dst_dev, L4virtio::Svr::Virtqueue *dst_queue,
-                      const Virtio_vlan_mangle &mangle)
-  : _request{request},
-    _src_req_proc{request->get_request_processor()},
-    _dst_dev{dst_dev},
-    _dst_queue{dst_queue},
-    _src{_request->first_buffer()},
-    _mangle{mangle}
-  {}
-
-  /**
-   * Deliver the request to the destination port
-   *
-   * \retval true   The request has been delivered to the destination port.
-   * \retval Exception
-   * \retval false  The request could not be delivered to the destination port.
-   */
-  Result transfer()
-  {
-    Dbg trace(Dbg::Request, Dbg::Trace, "REQ");
-    trace.printf("Transfer: %p\n", this);
-
-    // throws Bad_descriptor exception raised in SRC port queue.
-    // Exceptions of DST port queue already handled.
-    Result res = transfer_loop(trace);
-    switch (res)
+    if (!dst_header)
       {
-      case Result::Delivered: break;
-      case Result::Exception:
-        [[fallthrough]];
-      case Result::Dropped:
-        return res;
+        if (!total)
+          trace.printf("\tTransfer %p - not started yet, dropping\n", request.get());
+        return Result::Dropped;
       }
 
-    finish_transfer();
-    return Result::Delivered;
-  }
-
-  /**
-   * Finalize the Request delivery.
-   *
-   * This function calls `finish()` on the destination port's receive queue,
-   * which will result in triggering the destination client IRQ.
-   */
-  void finish_transfer()
-  {
-    // Either, we encountered an exception on the destination queue during
-    // processing or client reset queue.
-    if (!_dst_queue->ready())
-      return;
-
-    Dbg trace(Dbg::Request, Dbg::Trace, "REQ");
-    if (!_dst_header)
+    if (consumed.empty())
       {
-        if (!_total)
-          trace.printf("\tTransfer %p - not started yet, dropping\n", this);
-        return;
-      }
-
-    if (_consumed.empty())
-      {
-        assert(_dst_head);
-        assert(_num_merged == 1);
-        trace.printf("\tTransfer %p - Invoke dst_queue->finish()\n", this);
-        _dst_header->num_buffers = 1;
-        _dst_queue->finish(_dst_head, _dst_dev, _total);
+        assert(dst_head);
+        assert(num_merged == 1);
+        trace.printf("\tTransfer - Invoke dst_queue->finish()\n");
+        dst_header->num_buffers = 1;
+        dst_queue->finish(dst_head, dst_dev, total);
       }
     else
       {
-        assert(_dst_head);
-        _dst_header->num_buffers = _num_merged;
-        _consumed.push_back(Consumed_entry(_dst_head, _total));
-        trace.printf("\tTransfer %p - Invoke dst_queue->finish(iter)\n", this);
-        _dst_queue->finish(_consumed.begin(), _consumed.end(), _dst_dev);
+        assert(dst_head);
+        dst_header->num_buffers = num_merged;
+        consumed.push_back(Consumed_entry(dst_head, total));
+        trace.printf("\tTransfer - Invoke dst_queue->finish(iter)\n");
+        dst_queue->finish(consumed.begin(), consumed.end(), dst_dev);
       }
-    _dst_header = nullptr;
-  }
 
-  // Rewind the available ring of the destination port after source failure.
-  void rewind_dest_avail()
-  {
-    if (!_consumed.empty())
-      // partial transfer, rewind to before first descriptor of transfer.
-      _dst_queue->rewind_avail(_consumed.at(0).first);
-    else if (_dst_head)
-      // partial transfer, still at first _dst_head.
-      _dst_queue->rewind_avail(_dst_head);
-
-    _consumed.clear();
-    _dst_head = L4virtio::Svr::Virtqueue::Head_desc();
-    _total = 0;
-  }
-
-  ~Virtio_net_transfer()
-  {
-    /*
-     * We ended up here after an exception or a timeout, so the
-     * transfer is unfinished or has failed
-     */
-    finish_transfer();
+    return Result::Delivered;
   }
 };
 /**\}*/
