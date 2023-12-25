@@ -157,8 +157,19 @@ Virtio_switch::handle_port_irq(Virtio_port *port)
       port->tx_q()->disable_notify();
       port->rx_q()->disable_notify();
 
-      handle_tx_queue(port);
-      port->handle_rx_queue();
+      // Within the loop, to trigger before enabling notifications again.
+      for (unsigned idx = 0; idx < _max_ports; ++idx)
+        if (_ports[idx])
+          _ports[idx]->kick_disable_and_remember();
+
+      while (port->tx_work_pending())
+        handle_tx_queue(port);
+      while (port->rx_work_pending())
+        port->handle_rx_queue();
+
+      for (unsigned idx = 0; idx < _max_ports; ++idx)
+        if (_ports[idx])
+          _ports[idx]->kick_emit_and_enable(port->tx_q());
 
       port->tx_q()->enable_notify();
       port->rx_q()->enable_notify();
@@ -167,4 +178,5 @@ Virtio_switch::handle_port_irq(Virtio_port *port)
       L4virtio::rmb();
     }
   while (port->tx_work_pending() || port->rx_work_pending());
+
 }

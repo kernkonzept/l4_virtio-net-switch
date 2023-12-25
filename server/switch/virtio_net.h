@@ -231,8 +231,26 @@ public:
     if (queue->no_notify_guest())
       return;
 
-    _dev_config.add_irq_status(L4VIRTIO_IRQ_STATUS_VRING);
-    _kick_guest_irq->trigger();
+    if (_do_kick)
+      {
+        _dev_config.add_irq_status(L4VIRTIO_IRQ_STATUS_VRING);
+        _kick_guest_irq->trigger();
+      }
+    else
+      _kick_pending = true;
+  }
+
+  void kick_emit_and_enable(L4virtio::Svr::Virtqueue *queue)
+  {
+    _do_kick = true;
+    if (_kick_pending)
+      notify_queue(queue);
+  }
+
+  void kick_disable_and_remember()
+  {
+    _do_kick = false;
+    _kick_pending = false;
   }
 
   /** Getter for the transmission queue. */
@@ -254,5 +272,8 @@ private:
    * has been received and is present in the receive queue.
    */
   L4Re::Util::Unique_cap<L4::Irq> _kick_guest_irq;
+
+  bool _do_kick = true;
+  bool _kick_pending = false;
 };
 /**\}*/
