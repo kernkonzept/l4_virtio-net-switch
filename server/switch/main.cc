@@ -16,7 +16,9 @@
 #include <l4/sys/cxx/ipc_epiface>
 #include <l4/sys/cxx/ipc_varg>
 #include <l4/cxx/string>
+
 #include <vector>
+#include <terminate_handler-l4>
 
 #include "debug.h"
 #include "options.h"
