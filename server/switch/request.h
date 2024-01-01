@@ -286,8 +286,5 @@ public:
 
   Virtio_net const *dev() const
   { return _dev; }
-
-  void src_dev_error()
-  { _dev->device_error(); }
 };
 /**\}*/

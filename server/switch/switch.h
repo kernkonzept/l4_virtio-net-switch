@@ -128,7 +128,5 @@ public:
 
     return lookup_free_slot();
   }
-
-  void drop_pending_at_dest(Virtio_port *src_port);
 };
 /**\}*/

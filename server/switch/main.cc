@@ -49,9 +49,8 @@
  * - factory capability
  * - irq object for capability deletion irqs
  * - virtio host kick irqs
- * - (timeouts for pending transfers (via server_iface))
  */
-static L4Re::Util::Registry_server<L4Re::Util::Br_manager_timeout_hooks> server;
+static L4Re::Util::Registry_server<L4Re::Util::Br_manager_hooks> server;
 
 using Ds_vector = std::vector<L4::Cap<L4Re::Dataspace>>;
 static std::shared_ptr<Ds_vector> trusted_dataspaces;
@@ -134,13 +133,6 @@ class Switch_factory : public L4::Epiface_t<Switch_factory, L4::Factory>
    */
   class Switch_port : public Port
   {
-    void reset() override
-    {
-      Virtio_port::reset();
-
-      vio_switch()->drop_pending_at_dest(this);
-    }
-
     /**
      * IRQ endpoint on the port.
      *
@@ -166,15 +158,9 @@ class Switch_factory : public L4::Epiface_t<Switch_factory, L4::Factory>
       void handle_irq()
       { _switch->handle_port_irq(_port); }
 
-      Virtio_switch *vio_switch() const
-      { return _switch; }
-
       Kick_irq(Virtio_switch *virtio_switch, Virtio_port *port)
       : _switch{virtio_switch}, _port{port} {}
     };
-
-    Virtio_switch *vio_switch() const
-    { return _kick_irq.vio_switch(); }
 
     Kick_irq _kick_irq; /**< The IRQ to notify the client. */
 
@@ -225,7 +211,6 @@ class Switch_factory : public L4::Epiface_t<Switch_factory, L4::Factory>
             _port->tx_q()->disable_notify();
             _port->rx_q()->disable_notify();
 
-            _port->handle_rx_queue();
             _port->drop_requests();
 
             _port->tx_q()->enable_notify();
@@ -234,7 +219,7 @@ class Switch_factory : public L4::Epiface_t<Switch_factory, L4::Factory>
             L4virtio::wmb();
             L4virtio::rmb();
         }
-        while (_port->tx_work_pending() || _port->rx_work_pending());
+        while (_port->tx_work_pending());
       }
 
       Kick_irq(Virtio_port *port) : _port{port} {}

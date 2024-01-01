@@ -14,10 +14,7 @@
 
 #include <vector>
 
-#include <l4/cxx/ipc_timeout_queue>
-
 #include <l4/cxx/ref_ptr>
-#include <l4/cxx/dlist>
 #include <l4/cxx/pair>
 
 /**
@@ -39,16 +36,12 @@
  * On destruction, `finish_transfer()` will be called, which, in case of a
  * successful delivery, will trigger the client IRQ of the destination client.
  */
-class Virtio_net_transfer :
-  public cxx::D_list_item,
-  public L4::Ipc_svr::Timeout_queue::Timeout
+class Virtio_net_transfer
 {
 public:
-  typedef cxx::D_list<Virtio_net_transfer> Pending_list;
-
   enum class Result
   {
-    Delivered, Exception, Pending,
+    Delivered, Exception, Dropped,
   };
 
 private:
@@ -96,23 +89,6 @@ private:
   bool next_dst_buffer()
   { return _dst_req_proc.next(_dst_dev->mem_info(), &_dst); }
 
-  /**
-   * Callback for the timeout.
-   *
-   * If `transfer()` does not return successfully (that is, when the
-   * destination queue is full), `Virtio_port::handle_request()` enqueues this
-   * transfer in its list of pending requests and additionally starts a
-   * timeout. On expiration, this function removes the transfer from the list
-   * of pending requests. Finally, the transfer gets deleted.
-   */
-  void expired()
-  {
-    Dbg(Dbg::Queue, Dbg::Debug, "Queue").printf("Timeout expired: %p\n", this);
-
-    Pending_list::remove(this);
-    delete this;
-  }
-
   Result transfer_loop(Dbg const &trace)
   {
     // throws Bad_descriptor exception (SRC)
@@ -125,12 +101,19 @@ private:
         if (!_dst_head)
           {
             if (!_dst_queue->ready())
-              return Result::Pending;
+              return Result::Dropped;
 
             auto r = _dst_queue->next_avail();
 
             if (L4_UNLIKELY(!r))
-              return Result::Pending;
+              {
+                trace.printf("\tTransfer %p failed, destination queue depleted, dropping.\n",
+                             this);
+                // Abort incomplete transfer.
+                if (!_consumed.empty())
+                  _dst_queue->rewind_avail(_consumed.front().first);
+                return Result::Dropped;
+              }
 
             try
               {
@@ -277,7 +260,7 @@ public:
       case Result::Delivered: break;
       case Result::Exception:
         [[fallthrough]];
-      case Result::Pending:
+      case Result::Dropped:
         return res;
       }
 
@@ -325,16 +308,6 @@ public:
     _dst_header = nullptr;
   }
 
-  bool drop_request(Virtio_net const *src)
-  {
-    if (_request->dev() != src)
-      return false;
-
-    delete _request.get();
-    _request = nullptr;
-    return true;
-  }
-
   // Rewind the available ring of the destination port after source failure.
   void rewind_dest_avail()
   {
@@ -348,12 +321,6 @@ public:
     _consumed.clear();
     _dst_head = L4virtio::Svr::Virtqueue::Head_desc();
     _total = 0;
-  }
-
-  void src_dev_error() const
-  {
-    if (_request)
-      _request->src_dev_error();
   }
 
   ~Virtio_net_transfer()

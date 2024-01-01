@@ -96,13 +96,6 @@ Virtio_switch::check_ports()
 }
 
 void
-Virtio_switch::drop_pending_at_dest(Virtio_port *src_port)
-{
-  for (unsigned idx = 0; idx < _max_used; ++idx)
-    _ports[idx]->drop_pending(static_cast<Virtio_net *>(src_port));
-}
-
-void
 Virtio_switch::handle_tx_queue(Virtio_port *port)
 {
   auto request = port->get_tx_request();
@@ -151,7 +144,7 @@ void
 Virtio_switch::handle_port_irq(Virtio_port *port)
 {
   /* handle IRQ on one port for the time being */
-  if (!port->tx_work_pending() && !port->rx_work_pending())
+  if (!port->tx_work_pending())
     Dbg(Dbg::Port, Dbg::Info)
       .printf("Port %s: Irq without pending work\n", port->get_name());
 
@@ -180,14 +173,7 @@ Virtio_switch::handle_port_irq(Virtio_port *port)
             return;
         }
 
-      while (port->rx_work_pending())
-        port->handle_rx_queue();
-
       all_kick_emit_enable();
-
-      if (L4_UNLIKELY(port->device_needs_reset()))
-        // queue issue flagged during RX handling, e.g. Bad_descriptor
-        return;
 
       port->tx_q()->enable_notify();
       port->rx_q()->enable_notify();
@@ -195,6 +181,6 @@ Virtio_switch::handle_port_irq(Virtio_port *port)
       L4virtio::wmb();
       L4virtio::rmb();
     }
-  while (port->tx_work_pending() || port->rx_work_pending());
+  while (port->tx_work_pending());
 
 }

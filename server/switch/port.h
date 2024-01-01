@@ -53,50 +53,8 @@ class Virtio_port : public Virtio_net
   inline l4_uint32_t vlan_bloom_hash(l4_uint16_t vid)
   { return 1UL << (vid & 31U); }
 
-  /*
-   * List of pending requests
-   */
-  Virtio_net_transfer::Pending_list _pending_requests;
-
-  void dump_pending_requests()
-  {
-    Dbg trace(Dbg::Queue, Dbg::Trace, "REQ");
-
-    int i = 0;
-    trace.printf("%s - Pending requests\n", get_name());
-    for (auto iter = _pending_requests.end();
-         iter != _pending_requests.begin() && i<5;
-         --iter, ++i)
-      trace.printf("\tEntry %p\n", *iter);
-  }
-
   Mac_addr _mac;  /**< The MAC address of the port. */
   char _name[20]; /**< Debug name */
-
-
-  Virtio_net_transfer::Pending_list::Iterator
-  erase_pending_request(Virtio_net_transfer::Pending_list::Iterator iter)
-  {
-    auto i = *iter;
-    server_iface()->remove_timeout(i);
-    iter = _pending_requests.erase(iter);
-    delete i; // we own the pending transfer requests.
-    return iter;
-  }
-
-  void clear_all_pending_requests()
-  {
-    while (!_pending_requests.empty())
-      erase_pending_request(_pending_requests.begin());
-  }
-
-protected:
-  void reset() override
-  {
-    clear_all_pending_requests();
-
-    Virtio_net::reset();
-  }
 
 public:
   // delete copy and assignment
@@ -232,20 +190,6 @@ public:
               _dev_config.host_features(0));
   }
 
-  ~Virtio_port()
-  {
-    Dbg(Dbg::Port, Dbg::Trace)
-      .printf("%s: Dropping requests\n", _name);
-    clear_all_pending_requests();
-  }
-
-  /** Check whether there is any work pending on the receive queue */
-  bool rx_work_pending() const
-  {
-    return L4_LIKELY(rx_q()->ready()) && !_pending_requests.empty()
-           && rx_q()->desc_avail();
-  }
-
   /** Check whether there is any work pending on the transmission queue */
   bool tx_work_pending() const
   {
@@ -277,21 +221,6 @@ public:
   }
 
   /**
-   * Drop all pending transfer requests originating from a given source port.
-   */
-  void drop_pending(Virtio_net *src_port)
-  {
-    auto iter = _pending_requests.begin();
-    while (iter != _pending_requests.end())
-      {
-        if (iter->drop_request(src_port))
-          iter = erase_pending_request(iter);
-        else
-          ++iter;
-      }
-  }
-
-  /**
    * Drop all requests pending in the transmission queue.
    *
    * This is used for monitor ports, which are not allowed to send packets.
@@ -300,79 +229,12 @@ public:
   { Virtio_net_request::drop_requests(this, tx_q()); }
 
   /**
-   * Handle pending requests
-   *
-   * This function loops over the list of pending requests and tries
-   * to deliver the packets. If the transfer fails again, this means
-   * there is no free space in the receive queue and we have to try
-   * another time.
-   *
-   * If transfer() throws an exception we rely on unique_ptr to delete
-   * the element, which in turn removes the element from the list. We
-   * might have to re-visit this decision and think about continuing
-   * with the other requests in the list.
-   */
-  void handle_rx_queue()
-  {
-    auto iter = _pending_requests.begin();
-    while (iter != _pending_requests.end())
-      {
-        // unique pointer deletes the element when going out of
-        // scope. It interacts with the iterator, which still might
-        // point to the element we are deleting.
-        auto transfer_ptr = cxx::make_unique_ptr(*iter);
-
-        try
-          {
-            // throws Bad_descriptor exception raised in SRC port queue.
-            switch(transfer_ptr->transfer())
-              {
-              case Virtio_net_transfer::Result::Delivered:
-                break;
-              case Virtio_net_transfer::Result::Exception:
-                // exception on DEST/this called reset(), iter/memory invalid
-                [[fallthrough]];
-              case Virtio_net_transfer::Result::Pending:
-                // Leave the element in the list and try again later
-                transfer_ptr.release();
-                return;
-              }
-          }
-        catch (L4virtio::Svr::Bad_descriptor &e)
-          {
-            Dbg(Dbg::Port, Dbg::Warn, "REQ")
-              .printf("%s: caught bad descriptor exception: %s - %i"
-                      " -- Signal device error on source device.\n",
-                      __PRETTY_FUNCTION__, e.message(), e.error);
-
-            transfer_ptr->rewind_dest_avail();
-            transfer_ptr->src_dev_error();
-
-            // SRC queue error, pending request removed through device reset!
-            // Iterator invalid!
-            iter = _pending_requests.begin();
-            continue;
-          }
-
-        Dbg(Dbg::Queue, Dbg::Trace).printf("\t%s: Removing %p\n", get_name(),
-                                           transfer_ptr.get());
-        // erase() moves the iterator to the next element of the
-        // underlying data structure; we explicitly delete transfer by
-        // ourselves to make the interaction with the iterator visible
-        iter = _pending_requests.erase(iter);
-      }
-  }
-
-  /**
    * Handle a request  - send it to the guest associated with this port
    *
    * We try to send a packet to the guest associated with this
    * port. To do that, we create a Virtio_net_transfer object to keep
    * any state related to this transaction. If the transfer is
-   * successful, we delete the transfer object. Otherwise we enqueue
-   * it into the list of pending requests were it stays until either a
-   * timeout triggers or free space in the receive queue allows us to
-   * finish the pending transaction.
+   * successful, we delete the transfer object.
    */
   void handle_request(Virtio_port *src_port,
                       Virtio_net_request::Request_ptr &request)
@@ -408,8 +270,10 @@ public:
           {
           case Virtio_net_transfer::Result::Delivered: [[fallthrough]];
           case Virtio_net_transfer::Result::Exception: return;
-          case Virtio_net_transfer::Result::Pending: break;
+          case Virtio_net_transfer::Result::Dropped: break;
           }
+
+        // Drop packet that could not be transferred
       }
     catch (L4virtio::Svr::Bad_descriptor &e)
       {
@@ -423,23 +287,6 @@ public:
         throw;
       }
 
-    if (!rx_q()->ready())
-      // only buffer requests if the Port is alive.
-      return;
-
-    auto *transfer = transfer_ptr.release();
-    _pending_requests.push_back(transfer);
-    // Timeout is hardcoded at the moment and will be replaced by a
-    // configurable value in a follow-up commit
-    server_iface()->add_timeout(transfer,
-                                l4_kip_clock(l4re_kip()) + 2 * 1000000);
-
-    Dbg trace(Dbg::Queue, Dbg::Trace);
-    if (!trace.is_active())
-      return;
-
-    trace.printf("\t%s: Adding transfer %p to list\n", get_name(), transfer);
-    dump_pending_requests();
   }
 };
 /**\}*/
