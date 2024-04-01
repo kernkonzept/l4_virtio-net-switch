@@ -84,7 +84,7 @@ First, a virtual network port has to be created using the following Ned-Lua
 function. It has to be called on the communication channel called `switch`,
 which has been created earlier.
 
-    create(obj_type, num_ds [, name, type, vlan])
+    create(obj_type, ["ds-max=<max>", "name=<name>", "type=<port type>", "vlan=<options>"])
 
 * `obj_type`
 
@@ -92,7 +92,7 @@ which has been created earlier.
   positive integer. Currently the following objects are supported:
   * `0`: Virtual switch port
 
-* `num_ds`
+* `ds-max=<max>`
 
   Specifies the upper limit of the number of dataspaces the client is allowed
   to register with the virtual network switch for Virtio DMA.

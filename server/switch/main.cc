@@ -18,6 +18,7 @@
 #include <l4/cxx/string>
 
 #include <vector>
+#include <string>
 #include <terminate_handler-l4>
 
 #include "debug.h"
@@ -54,6 +55,48 @@ static L4Re::Util::Registry_server<L4Re::Util::Br_manager_timeout_hooks> server;
 
 using Ds_vector = std::vector<L4::Cap<L4Re::Dataspace>>;
 static std::shared_ptr<Ds_vector> trusted_dataspaces;
+
+static bool
+parse_int_optstring(char const *optstring, int *out)
+{
+  char *endp;
+
+  errno = 0;
+  long num = strtol(optstring, &endp, 10);
+
+  // check that long can be converted to int
+  if (errno || *endp != '\0' || num < INT_MIN || num > INT_MAX)
+    return false;
+
+  *out = num;
+
+  return true;
+}
+
+static bool
+parse_int_param(L4::Ipc::Varg const &param, char const *prefix, int *out)
+{
+  l4_size_t headlen = strlen(prefix);
+
+  if (param.length() < headlen)
+    return false;
+
+  char const *pstr = param.value<char const *>();
+
+  if (strncmp(pstr, prefix, headlen) != 0)
+    return false;
+
+  std::string tail(pstr + headlen, param.length() - headlen);
+
+  if (!parse_int_optstring(tail.c_str(), out))
+    {
+      Err(Err::Normal).printf("Bad paramter '%s'. Invalid number specified.\n",
+                              prefix);
+      throw L4::Runtime_error(-L4_EINVAL);
+    }
+
+  return true;
+}
 
 /**
  * The IPC interface for creating ports.
@@ -383,21 +426,6 @@ public:
         return -L4_EINVAL;
       }
 
-    L4::Ipc::Varg opt = va.pop_front();
-    if (!opt.is_of_int())
-      {
-        warn.printf("Invalid data type for ds number\n");
-        return -L4_EINVAL;
-      }
-
-    l4_mword_t num_ds = opt.value<l4_mword_t>();
-    if (num_ds <= 0 || num_ds > 80)
-      {
-        warn.printf("warning: client requested invalid number"
-                    " of data spaces: 0 < %ld <= 80\n", num_ds);
-        return -L4_EINVAL;
-      }
-
     bool monitor = false;
     char name[20] = "";
     unsigned arg_n = 2;
@@ -411,13 +439,25 @@ public:
     // Last two octets are filled with port number.
     l4_uint8_t mac[6] = { 0x02, 0x08, 0x0f, 0x2a, 0x00, 0x00 };
     bool mac_set = false;
+    int num_ds = 2;
 
     for (L4::Ipc::Varg opt: va)
       {
         if (!opt.is_of<char const *>())
           {
-            Err(Err::Normal).printf("Unexpected type for argument %d\n", arg_n);
+            warn.printf("Unexpected type for argument %d\n", arg_n);
             return -L4_EINVAL;
+          }
+
+        if (parse_int_param(opt, "ds-max=", &num_ds))
+          {
+            if (num_ds <= 0 || num_ds > 80)
+              {
+                Err(Err::Normal).printf("warning: client requested invalid number"
+                                        " of data spaces: 0 < %d <= 80\n", num_ds);
+                return -L4_EINVAL;
+              }
+            continue;
           }
 
         if (!handle_opt_arg(opt, monitor, name, sizeof(name), vlan_access,
