@@ -117,7 +117,10 @@ Virtio_switch::handle_tx_queue(Virtio_port *port)
       auto *target = _mac_table.lookup(dst);
       if (target)
         {
-          if (target->match_vlan(vlan))
+          // Do not send packets to the port they came in; they might
+          // be sent to us by another switch which does not know how
+          // to reach the target.
+          if (target != port && target->match_vlan(vlan))
             {
               target->handle_request(port, request);
               if (_monitor && !filter_request(request.get()))
