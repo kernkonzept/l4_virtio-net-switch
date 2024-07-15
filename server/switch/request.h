@@ -71,6 +71,9 @@ private:
    */
   void finish()
   {
+    if (!_queue->ready())
+      return;
+
     Dbg(Dbg::Virtio, Dbg::Trace).printf("%s(%p)\n", __PRETTY_FUNCTION__, this);
     _queue->finish(_head, _dev, 0);
   }
@@ -283,5 +286,8 @@ public:
 
   Virtio_net const *dev() const
   { return _dev; }
+
+  void src_dev_error()
+  { _dev->device_error(); }
 };
 /**\}*/

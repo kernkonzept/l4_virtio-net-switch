@@ -49,6 +49,21 @@ private:
    */
   void handle_tx_queue(Virtio_port *port);
 
+
+  void all_kick_emit_enable()
+  {
+    for (unsigned idx = 0; idx < _max_ports; ++idx)
+      if (_ports[idx])
+        _ports[idx]->kick_emit_and_enable();
+  }
+
+  void all_kick_disable_remember()
+  {
+    for (unsigned idx = 0; idx < _max_ports; ++idx)
+      if (_ports[idx])
+        _ports[idx]->kick_disable_and_remember();
+  }
+
 public:
   /**
    * Create a switch with n ports.
@@ -113,5 +128,7 @@ public:
 
     return lookup_free_slot();
   }
+
+  void drop_pending_at_dest(Virtio_port *src_port);
 };
 /**\}*/

@@ -218,6 +218,9 @@ public:
     dump_features(info, hdr->driver_features_map);
   }
 
+  bool device_needs_reset() const
+  { return _dev_config.status().device_needs_reset(); }
+
   /** Check whether both virtqueues are ready. */
   bool check_queues() override
   {

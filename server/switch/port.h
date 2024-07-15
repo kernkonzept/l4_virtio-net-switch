@@ -73,6 +73,31 @@ class Virtio_port : public Virtio_net
   Mac_addr _mac;  /**< The MAC address of the port. */
   char _name[20]; /**< Debug name */
 
+
+  Virtio_net_transfer::Pending_list::Iterator
+  erase_pending_request(Virtio_net_transfer::Pending_list::Iterator iter)
+  {
+    auto i = *iter;
+    server_iface()->remove_timeout(i);
+    iter = _pending_requests.erase(iter);
+    delete i; // we own the pending transfer requests.
+    return iter;
+  }
+
+  void clear_all_pending_requests()
+  {
+    while (!_pending_requests.empty())
+      erase_pending_request(_pending_requests.begin());
+  }
+
+protected:
+  void reset() override
+  {
+    clear_all_pending_requests();
+
+    Virtio_net::reset();
+  }
+
 public:
   // delete copy and assignment
   Virtio_port(Virtio_port const &) = delete;
@@ -211,13 +236,7 @@ public:
   {
     Dbg(Dbg::Port, Dbg::Trace)
       .printf("%s: Dropping requests\n", _name);
-    auto iter = _pending_requests.begin();
-    while (iter != _pending_requests.end())
-      {
-        auto i = *iter;
-        iter = _pending_requests.erase(iter);
-        delete i;
-      }
+    clear_all_pending_requests();
   }
 
   /** Check whether there is any work pending on the receive queue */
@@ -258,6 +277,21 @@ public:
   }
 
   /**
+   * Drop all pending transfer requests originating from a given source port.
+   */
+  void drop_pending(Virtio_net *src_port)
+  {
+    auto iter = _pending_requests.begin();
+    while (iter != _pending_requests.end())
+      {
+        if (iter->drop_request(src_port))
+          iter = erase_pending_request(iter);
+        else
+          ++iter;
+      }
+  }
+
+  /**
    * Drop all requests pending in the transmission queue.
    *
    * This is used for monitor ports, which are not allowed to send packets.
@@ -288,11 +322,36 @@ public:
         // point to the element we are deleting.
         auto transfer_ptr = cxx::make_unique_ptr(*iter);
 
-        if (!transfer_ptr->transfer())
+        try
           {
-            // Leave the element in the list and try again later
-            transfer_ptr.release();
-            break;
+            // throws Bad_descriptor exception raised in SRC port queue.
+            switch(transfer_ptr->transfer())
+              {
+              case Virtio_net_transfer::Result::Delivered:
+                break;
+              case Virtio_net_transfer::Result::Exception:
+                // exception on DEST/this called reset(), iter/memory invalid
+                [[fallthrough]];
+              case Virtio_net_transfer::Result::Pending:
+                // Leave the element in the list and try again later
+                transfer_ptr.release();
+                return;
+              }
+          }
+        catch (L4virtio::Svr::Bad_descriptor &e)
+          {
+            Dbg(Dbg::Port, Dbg::Warn, "REQ")
+              .printf("%s: caught bad descriptor exception: %s - %i"
+                      " -- Signal device error on source device.\n",
+                      __PRETTY_FUNCTION__, e.message(), e.error);
+
+            transfer_ptr->rewind_dest_avail();
+            transfer_ptr->src_dev_error();
+
+            // SRC queue error, pending request removed through device reset!
+            // Iterator invalid!
+            iter = _pending_requests.begin();
+            continue;
           }
 
         Dbg(Dbg::Queue, Dbg::Trace).printf("\t%s: Removing %p\n", get_name(),
@@ -342,7 +401,30 @@ public:
 
     auto transfer_ptr =
       cxx::make_unique<Virtio_net_transfer>(request, this, rx_q(), mangle);
-    if (transfer_ptr->transfer())
+    try
+      {
+        // throws Bad_descriptor exception raised in SRC port queue.
+        switch (transfer_ptr->transfer())
+          {
+          case Virtio_net_transfer::Result::Delivered: [[fallthrough]];
+          case Virtio_net_transfer::Result::Exception: return;
+          case Virtio_net_transfer::Result::Pending: break;
+          }
+      }
+    catch (L4virtio::Svr::Bad_descriptor &e)
+      {
+        Dbg(Dbg::Port, Dbg::Warn, "REQ")
+          .printf("%s: caught bad descriptor exception: %s - %i"
+                  " -- Signal device error on source device.\n",
+                  __PRETTY_FUNCTION__, e.message(), e.error);
+
+        // Handle partial transfers to destination port.
+        transfer_ptr->rewind_dest_avail();
+        throw;
+      }
+
+    if (!rx_q()->ready())
+      // only buffer requests if the Port is alive.
       return;
 
     auto *transfer = transfer_ptr.release();

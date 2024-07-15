@@ -134,6 +134,13 @@ class Switch_factory : public L4::Epiface_t<Switch_factory, L4::Factory>
    */
   class Switch_port : public Port
   {
+    void reset() override
+    {
+      Virtio_port::reset();
+
+      vio_switch()->drop_pending_at_dest(this);
+    }
+
     /**
      * IRQ endpoint on the port.
      *
@@ -159,16 +166,24 @@ class Switch_factory : public L4::Epiface_t<Switch_factory, L4::Factory>
       void handle_irq()
       { _switch->handle_port_irq(_port); }
 
+      Virtio_switch *vio_switch() const
+      { return _switch; }
+
       Kick_irq(Virtio_switch *virtio_switch, Virtio_port *port)
       : _switch{virtio_switch}, _port{port} {}
     };
 
+    Virtio_switch *vio_switch() const
+    { return _kick_irq.vio_switch(); }
+
     Kick_irq _kick_irq; /**< The IRQ to notify the client. */
+
   public:
-    Switch_port(L4Re::Util::Object_registry* registry,
+    Switch_port(L4Re::Util::Object_registry *registry,
                 Virtio_switch *virtio_switch, unsigned vq_max, unsigned num_ds,
                 char const *name, l4_uint8_t const *mac)
-    : Port(vq_max, num_ds, name, mac), _kick_irq(virtio_switch, this)
+    : Port(vq_max, num_ds, name, mac),
+      _kick_irq(virtio_switch, this)
     { register_end_points(registry, &_kick_irq); }
 
     virtual ~Switch_port()

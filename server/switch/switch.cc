@@ -96,6 +96,13 @@ Virtio_switch::check_ports()
 }
 
 void
+Virtio_switch::drop_pending_at_dest(Virtio_port *src_port)
+{
+  for (unsigned idx = 0; idx < _max_used; ++idx)
+    _ports[idx]->drop_pending(static_cast<Virtio_net *>(src_port));
+}
+
+void
 Virtio_switch::handle_tx_queue(Virtio_port *port)
 {
   auto request = port->get_tx_request();
@@ -154,18 +161,33 @@ Virtio_switch::handle_port_irq(Virtio_port *port)
       port->rx_q()->disable_notify();
 
       // Within the loop, to trigger before enabling notifications again.
-      for (unsigned idx = 0; idx < _max_ports; ++idx)
-        if (_ports[idx])
-          _ports[idx]->kick_disable_and_remember();
+      all_kick_disable_remember();
 
-      while (port->tx_work_pending())
-        handle_tx_queue(port);
+      try
+        {
+          // throws Bad_descriptor exceptions raised on SRC port
+          while (port->tx_work_pending())
+            handle_tx_queue(port);
+        }
+      catch (L4virtio::Svr::Bad_descriptor &e)
+        {
+            Dbg(Dbg::Port, Dbg::Warn, "REQ")
+              .printf("%s: caught bad descriptor exception: %s - %i"
+                      " -- Signal device error on device %p.\n",
+                      __PRETTY_FUNCTION__, e.message(), e.error, port);
+            port->device_error();
+            all_kick_emit_enable();
+            return;
+        }
+
       while (port->rx_work_pending())
         port->handle_rx_queue();
 
-      for (unsigned idx = 0; idx < _max_ports; ++idx)
-        if (_ports[idx])
-          _ports[idx]->kick_emit_and_enable();
+      all_kick_emit_enable();
+
+      if (L4_UNLIKELY(port->device_needs_reset()))
+        // queue issue flagged during RX handling, e.g. Bad_descriptor
+        return;
 
       port->tx_q()->enable_notify();
       port->rx_q()->enable_notify();

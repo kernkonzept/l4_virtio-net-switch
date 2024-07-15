@@ -46,6 +46,11 @@ class Virtio_net_transfer :
 public:
   typedef cxx::D_list<Virtio_net_transfer> Pending_list;
 
+  enum class Result
+  {
+    Delivered, Exception, Pending,
+  };
+
 private:
   /*
    * src description
@@ -108,33 +113,9 @@ private:
     delete this;
   }
 
-public:
-  // delete copy and assignment
-  Virtio_net_transfer(Virtio_net_transfer const &) = delete;
-  Virtio_net_transfer &operator = (Virtio_net_transfer const &) = delete;
-
-  Virtio_net_transfer(Virtio_net_request::Request_ptr request,
-                      Virtio_net *dst_dev, L4virtio::Svr::Virtqueue *dst_queue,
-                      const Virtio_vlan_mangle &mangle)
-  : _request{request},
-    _src_req_proc{request->get_request_processor()},
-    _dst_dev{dst_dev},
-    _dst_queue{dst_queue},
-    _src{_request->first_buffer()},
-    _mangle{mangle}
-  {}
-
-  /**
-   * Deliver the request to the destination port
-   *
-   * \retval true   The request has been delivered to the destination port.
-   * \retval false  The request could not be delivered to the destination port.
-   */
-  bool transfer()
+  Result transfer_loop(Dbg const &trace)
   {
-    Dbg trace(Dbg::Request, Dbg::Trace, "REQ");
-    trace.printf("Transfer: %p\n", this);
-
+    // throws Bad_descriptor exception (SRC)
     while (!_src.done() || next_src_buffer())
       {
         /* The source data structures are already initialized, the header
@@ -144,14 +125,27 @@ public:
         if (!_dst_head)
           {
             if (!_dst_queue->ready())
-              return false;
+              return Result::Pending;
 
             auto r = _dst_queue->next_avail();
 
             if (L4_UNLIKELY(!r))
-              return false;
+              return Result::Pending;
 
-            _dst_head = _dst_req_proc.start(_dst_dev->mem_info(), r, &_dst);
+            try
+              {
+                _dst_head = _dst_req_proc.start(_dst_dev->mem_info(), r, &_dst);
+              }
+            catch (L4virtio::Svr::Bad_descriptor &e)
+              {
+                Dbg(Dbg::Request, Dbg::Warn, "REQ")
+                  .printf("%s: bad descriptor exception: %s - %i"
+                          " -- signal device error in destination device %p.\n",
+                          __PRETTY_FUNCTION__, e.message(), e.error, _dst_dev);
+
+                _dst_dev->device_error();
+                return Result::Exception; // Must not touch the dst queues anymore.
+              }
 
             if (!_dst_header)
               {
@@ -210,7 +204,22 @@ public:
             ++_num_merged;
           }
 
-        if (!_dst.done() || next_dst_buffer())
+        bool has_next_dst_buffer = false;
+        try
+          {
+            has_next_dst_buffer = next_dst_buffer();
+          }
+        catch (L4virtio::Svr::Bad_descriptor &e)
+          {
+            Dbg(Dbg::Request, Dbg::Warn, "REQ")
+              .printf("%s: bad descriptor exception: %s - %i"
+                      " -- signal device error in destination device %p.\n",
+                      __PRETTY_FUNCTION__, e.message(), e.error, _dst_dev);
+            _dst_dev->device_error();
+            return Result::Exception; // Must not touch the dst queues anymore.
+          }
+
+        if (!_dst.done() || has_next_dst_buffer)
           {
             trace.printf("\t: Copying %p#%p:%u (%x) -> %p#%p:%u  (%x)\n",
                          _request->dev(),
@@ -228,8 +237,52 @@ public:
             _dst_head = L4virtio::Svr::Virtqueue::Head_desc();
           }
       }
+
+    return Result::Delivered;
+  }
+
+public:
+  // delete copy and assignment
+  Virtio_net_transfer(Virtio_net_transfer const &) = delete;
+  Virtio_net_transfer &operator = (Virtio_net_transfer const &) = delete;
+
+  Virtio_net_transfer(Virtio_net_request::Request_ptr request,
+                      Virtio_net *dst_dev, L4virtio::Svr::Virtqueue *dst_queue,
+                      const Virtio_vlan_mangle &mangle)
+  : _request{request},
+    _src_req_proc{request->get_request_processor()},
+    _dst_dev{dst_dev},
+    _dst_queue{dst_queue},
+    _src{_request->first_buffer()},
+    _mangle{mangle}
+  {}
+
+  /**
+   * Deliver the request to the destination port
+   *
+   * \retval true   The request has been delivered to the destination port.
+   * \retval Exception
+   * \retval false  The request could not be delivered to the destination port.
+   */
+  Result transfer()
+  {
+    Dbg trace(Dbg::Request, Dbg::Trace, "REQ");
+    trace.printf("Transfer: %p\n", this);
+
+    // throws Bad_descriptor exception raised in SRC port queue.
+    // Exceptions of DST port queue already handled.
+    Result res = transfer_loop(trace);
+    switch (res)
+      {
+      case Result::Delivered: break;
+      case Result::Exception:
+        [[fallthrough]];
+      case Result::Pending:
+        return res;
+      }
+
     finish_transfer();
-    return true;
+    return Result::Delivered;
   }
 
   /**
@@ -240,6 +293,11 @@ public:
    */
   void finish_transfer()
   {
+    // Either, we encountered an exception on the destination queue during
+    // processing or client reset queue.
+    if (!_dst_queue->ready())
+      return;
+
     Dbg trace(Dbg::Request, Dbg::Trace, "REQ");
     if (!_dst_header)
       {
@@ -265,6 +323,37 @@ public:
         _dst_queue->finish(_consumed.begin(), _consumed.end(), _dst_dev);
       }
     _dst_header = nullptr;
+  }
+
+  bool drop_request(Virtio_net const *src)
+  {
+    if (_request->dev() != src)
+      return false;
+
+    delete _request.get();
+    _request = nullptr;
+    return true;
+  }
+
+  // Rewind the available ring of the destination port after source failure.
+  void rewind_dest_avail()
+  {
+    if (!_consumed.empty())
+      // partial transfer, rewind to before first descriptor of transfer.
+      _dst_queue->rewind_avail(_consumed.at(0).first);
+    else if (_dst_head)
+      // partial transfer, still at first _dst_head.
+      _dst_queue->rewind_avail(_dst_head);
+
+    _consumed.clear();
+    _dst_head = L4virtio::Svr::Virtqueue::Head_desc();
+    _total = 0;
+  }
+
+  void src_dev_error() const
+  {
+    if (_request)
+      _request->src_dev_error();
   }
 
   ~Virtio_net_transfer()
