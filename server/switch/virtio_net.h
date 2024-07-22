@@ -131,6 +131,7 @@ public:
 #endif
 
     _dev_config.host_features(0) = hf.raw;
+    _dev_config.set_host_feature(L4VIRTIO_FEATURE_VERSION_1);
     _dev_config.reset_hdr();
 
     reset_queue_config(Rx, vq_max);
