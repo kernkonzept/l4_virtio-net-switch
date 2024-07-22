@@ -169,7 +169,7 @@ Virtio_switch::handle_port_irq(Virtio_port *port)
 
       for (unsigned idx = 0; idx < _max_ports; ++idx)
         if (_ports[idx])
-          _ports[idx]->kick_emit_and_enable(port->tx_q());
+          _ports[idx]->kick_emit_and_enable();
 
       port->tx_q()->enable_notify();
       port->rx_q()->enable_notify();

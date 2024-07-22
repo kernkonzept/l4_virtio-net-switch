@@ -22,6 +22,37 @@
  * \ingroup virtio_net_switch
  * \{
  */
+class Virtqueue : public L4virtio::Svr::Virtqueue
+{
+public:
+  bool kick_queue()
+  {
+    if (no_notify_guest())
+      return false;
+
+    if (_do_kick)
+      return true;
+
+    _kick_pending = true;
+    return false;
+  }
+
+  bool kick_enable_get_pending()
+  {
+    _do_kick = true;
+    return _kick_pending;
+  }
+
+  void kick_disable_and_remember()
+  {
+    _do_kick = false;
+    _kick_pending = false;
+  }
+
+private:
+  bool _do_kick = true;
+  bool _kick_pending = false;
+};
 
 /**
  * The Base class of a Port.
@@ -229,52 +260,54 @@ public:
    */
   void notify_queue(L4virtio::Svr::Virtqueue *queue)
   {
-    if (queue->no_notify_guest())
-      return;
-
-    if (_do_kick)
+    // Downcast to Virtqueue to access kick_queue() - we know that our
+    // queues have the type Virtqueue.
+    Virtqueue *q = static_cast<Virtqueue*>(queue);
+    if (q->kick_queue())
       {
         _dev_config.add_irq_status(L4VIRTIO_IRQ_STATUS_VRING);
         _kick_guest_irq->trigger();
       }
-    else
-      _kick_pending = true;
   }
 
-  void kick_emit_and_enable(L4virtio::Svr::Virtqueue *queue)
+  void kick_emit_and_enable()
   {
-    _do_kick = true;
-    if (_kick_pending)
-      notify_queue(queue);
+    bool kick_pending = false;
+
+    for (auto &q : _q)
+      kick_pending |= q.kick_enable_get_pending();
+
+    if (kick_pending)
+      {
+        _dev_config.add_irq_status(L4VIRTIO_IRQ_STATUS_VRING);
+        _kick_guest_irq->trigger();
+      }
   }
 
   void kick_disable_and_remember()
   {
-    _do_kick = false;
-    _kick_pending = false;
+    for (auto &q : _q)
+      q.kick_disable_and_remember();
   }
 
   /** Getter for the transmission queue. */
-  L4virtio::Svr::Virtqueue *tx_q() { return &_q[Tx]; }
+  Virtqueue *tx_q() { return &_q[Tx]; }
   /** Getter for the receive queue. */
-  L4virtio::Svr::Virtqueue *rx_q() { return &_q[Rx]; }
+  Virtqueue *rx_q() { return &_q[Rx]; }
   /** Getter for the transmission queue. */
-  L4virtio::Svr::Virtqueue const *tx_q() const { return &_q[Tx]; }
+  Virtqueue const *tx_q() const { return &_q[Tx]; }
   /** Getter for the receive queue. */
-  L4virtio::Svr::Virtqueue const *rx_q() const { return &_q[Rx]; }
+  Virtqueue const *rx_q() const { return &_q[Rx]; }
 
 private:
   /** Maximum number of entries in a virtqueue that is used by the port */
   unsigned _vq_max;
   /** the two used virtqueues */
-  L4virtio::Svr::Virtqueue _q[2];
+  Virtqueue _q[2];
   /**
    * The IRQ used to notify the associated client that a new network request
    * has been received and is present in the receive queue.
    */
   L4Re::Util::Unique_cap<L4::Irq> _kick_guest_irq;
-
-  bool _do_kick = true;
-  bool _kick_pending = false;
 };
 /**\}*/
