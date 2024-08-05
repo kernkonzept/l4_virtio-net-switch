@@ -84,7 +84,8 @@ First, a virtual network port has to be created using the following Ned-Lua
 function. It has to be called on the communication channel called `switch`,
 which has been created earlier.
 
-    create(obj_type, ["ds-max=<max>", "name=<name>", "type=<port type>", "vlan=<options>"])
+    create(obj_type, ["ds-max=<max>", "name=<name>", "type=<port type>",
+                      "vlan=<options>", "mac=<mac_address>"])
 
 * `obj_type`
 
@@ -155,12 +156,12 @@ virtual network switch using the Virtio network protocol.
 Here are couple of examples on how to create ports with different properties:
 
     -- normal port with at most 4 data spaces
-    net0 = switch:create(0, 4)
+    net0 = switch:create(0, "ds-max=4")
     -- like the previous but with name foo
-    net0 = switch:create(0, 4, "name=foo")
+    net0 = switch:create(0, "ds-max=4", "name=foo")
     -- like the previous but the port is a monitor port
-    net0 = switch:create(0, 4, "name=foo", "type=monitor")
+    net0 = switch:create(0, "ds-max=4", "name=foo", "type=monitor")
     -- normal port with 4 data spaces as access port to VLAN 1
-    net0 = switch:create(0, 4, "name=vl1", "vlan=access=1")
+    net0 = switch:create(0, "ds-max=4", "name=vl1", "vlan=access=1")
     -- normal port with 4 data spaces as trunk port participating in VLAN 1 & 2
-    net0 = switch:create(0, 4, "name=vl1", "vlan=trunk=1,2")
+    net0 = switch:create(0, "ds-max=4", "name=vl1", "vlan=trunk=1,2")
