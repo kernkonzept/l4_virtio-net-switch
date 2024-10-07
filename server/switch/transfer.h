@@ -14,7 +14,6 @@
 
 #include <vector>
 
-#include <l4/cxx/ref_ptr>
 #include <l4/cxx/pair>
 
 /**
@@ -52,13 +51,13 @@ public:
    * \throws L4virtio::Svr::Bad_descriptor  Exception raised in SRC port queue.
    */
   static
-  Result transfer(Virtio_net_request::Request_ptr request,
+  Result transfer(Virtio_net_request const &request,
                   Virtio_net *dst_dev,
                   L4virtio::Svr::Virtqueue *dst_queue,
                   Virtio_vlan_mangle &mangle)
   {
     Dbg trace(Dbg::Request, Dbg::Trace, "REQ");
-    trace.printf("Transfer request: %p\n", request.get());
+    trace.printf("Transfer request: %p\n", request.header());
 
     /*
      * src description
@@ -71,11 +70,11 @@ public:
      * processor instance, which will be initialized using the current
      * state of the "parent request".
      */
-    L4virtio::Svr::Request_processor src_req_proc = request->get_request_processor();
+    L4virtio::Svr::Request_processor src_req_proc = request.get_request_processor();
 
     /* the buffer descriptors used for this transaction and the amount
      * of bytes copied to the current target descriptor */
-    Buffer src = request->first_buffer();
+    Buffer src = request.first_buffer();
     Buffer dst;
     int total = 0;
     l4_uint16_t num_merged = 0;
@@ -90,7 +89,7 @@ public:
       {
         try
           {
-            if (src.done() && !src_req_proc.next(request->dev()->mem_info(), &src))
+            if (src.done() && !src_req_proc.next(request.dev()->mem_info(), &src))
               // Request completely copied to destination.
               break;
           }
@@ -122,7 +121,7 @@ public:
             if (L4_UNLIKELY(!r))
               {
                 trace.printf("\tTransfer %p failed, destination queue depleted, dropping.\n",
-                             request.get());
+                             request.header());
                 // Abort incomplete transfer.
                 if (!consumed.empty())
                   dst_queue->rewind_avail(consumed.front().first);
@@ -194,7 +193,7 @@ public:
                  * invalid checksum could be successfully delivered.
                  */
                 total = sizeof(Virtio_net::Hdr);
-                memcpy(dst_header, request->header(), total);
+                memcpy(dst_header, request.header(), total);
                 mangle.rewrite_hdr(dst_header);
                 dst.skip(total);
               }
@@ -219,7 +218,7 @@ public:
         if (!dst.done() || has_next_dst_buffer)
           {
             trace.printf("\t: Copying %p#%p:%u (%x) -> %p#%p:%u  (%x)\n",
-                         request->dev(),
+                         request.dev(),
                          src.pos, src.left, src.left,
                          dst_dev, dst.pos, dst.left, dst.left);
 
@@ -244,7 +243,7 @@ public:
     if (!dst_header)
       {
         if (!total)
-          trace.printf("\tTransfer %p - not started yet, dropping\n", request.get());
+          trace.printf("\tTransfer %p - not started yet, dropping\n", request.header());
         return Result::Dropped;
       }
 

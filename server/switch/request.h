@@ -7,10 +7,7 @@
  */
 #pragma once
 
-#include <l4/cxx/hlist>
-
 #include <l4/l4virtio/server/virtio>
-#include <l4/cxx/ref_ptr>
 #include <l4/util/assert.h>
 
 #include "virtio_net_buffer.h"
@@ -19,6 +16,8 @@
 #include "debug.h"
 #include "vlan.h"
 
+#include <optional>
+#include <utility>
 
 /**
  * \ingroup virtio_net_switch
@@ -34,11 +33,8 @@
  * On destruction, `finish()` will be called, which, will trigger the client
  * IRQ of the source client.
  */
-class Virtio_net_request : public cxx::Ref_obj
+class Virtio_net_request
 {
-public:
-  typedef cxx::Ref_ptr<Virtio_net_request> Request_ptr;
-
 private:
   /* needed for Virtqueue::finish() */
   /** Source Port */
@@ -71,11 +67,12 @@ private:
    */
   void finish()
   {
-    if (!_queue->ready())
+    if (_queue == nullptr || !_queue->ready())
       return;
 
     Dbg(Dbg::Virtio, Dbg::Trace).printf("%s(%p)\n", __PRETTY_FUNCTION__, this);
     _queue->finish(_head, _dev, 0);
+    _queue = nullptr;
   }
 
 public:
@@ -91,13 +88,13 @@ public:
    * active buffer for this request. The buffer might only be a part
    * of the request, which may consist of more than one buffer.
    */
-  const uint8_t *buffer(size_t *size)
+  const uint8_t *buffer(size_t *size) const
   {
     *size = _pkt.left;
     return (uint8_t *)_pkt.pos;
   }
 
-  void dump_request(Virtio_net *dev)
+  void dump_request(Virtio_net *dev) const
   {
     uint8_t *packet = (uint8_t *)_pkt.pos;
     Dbg debug(Dbg::Request, Dbg::Debug, "REQ");
@@ -153,9 +150,41 @@ public:
       }
   }
 
-  // delete copy and assignment
+  // delete copy constructor and copy assignment operator
   Virtio_net_request(Virtio_net_request const &) = delete;
   Virtio_net_request &operator = (Virtio_net_request const &) = delete;
+
+  // define move constructor and copy assignment operator
+  Virtio_net_request(Virtio_net_request &&other)
+  : _dev(other._dev),
+    _queue(other._queue),
+    _head(std::move(other._head)),
+    _req_proc(std::move(other._req_proc)),
+    _header(other._header),
+    _pkt(std::move(other._pkt))
+  {
+
+    // Invalidate other.
+    other._queue = nullptr;
+  }
+
+  Virtio_net_request &operator = (Virtio_net_request &&other)
+  {
+    // Invalidate self.
+    finish();
+
+    _dev = other._dev;
+    _queue = other._queue;
+    _head = std::move(other._head);
+    _req_proc = std::move(other._req_proc);
+    _header = other._header;
+    _pkt = std::move(other._pkt);
+
+    // Invalidate other.
+    other._queue = nullptr;
+
+    return *this;
+  }
 
   Virtio_net_request(Virtio_net *dev, L4virtio::Svr::Virtqueue *queue,
                      L4virtio::Svr::Virtqueue::Request const &req)
@@ -217,11 +246,11 @@ public:
    * \param dev    Port of the provided virtqueue.
    * \param queue  Virtqueue to extract next entry from.
    */
-  static Request_ptr get_request(Virtio_net *dev,
-                                 L4virtio::Svr::Virtqueue *queue)
+  static std::optional<Virtio_net_request>
+  get_request(Virtio_net *dev, L4virtio::Svr::Virtqueue *queue)
   {
     if (L4_UNLIKELY(!queue->ready()))
-      return nullptr;
+      return std::nullopt;
 
     if (auto r = queue->next_avail())
       {
@@ -231,14 +260,14 @@ public:
         // We might check later on whether it is possible to
         // save the state when we actually have to because a
         // transfer is blocking on a port.
-        auto request = cxx::make_ref_obj<Virtio_net_request>(dev, queue, r);
-        if (request->valid())
+        auto request = Virtio_net_request(dev, queue, r);
+        if (request.valid())
           {
-            request->dump_request(dev);
+            request.dump_request(dev);
             return request;
           }
       }
-    return nullptr;
+    return std::nullopt;
   }
 
   Buffer const &first_buffer() const

@@ -41,9 +41,9 @@ inline bool filter(const uint8_t *, size_t)
  * \retval true   The packet shall be filtered out.
  * \retval false  The packet shall be forwarded.
 */
-inline bool filter_request(Virtio_net_request *req)
+inline bool filter_request(Virtio_net_request const &req)
 {
   size_t size;
-  const uint8_t *buf = req->buffer(&size);
+  const uint8_t *buf = req.buffer(&size);
   return filter(buf, size);
 }

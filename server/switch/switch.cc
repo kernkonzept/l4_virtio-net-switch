@@ -118,9 +118,9 @@ Virtio_switch::handle_tx_queue(Virtio_port *port)
           // to reach the target.
           if (target != port && target->match_vlan(vlan))
             {
-              target->handle_request(port, request);
-              if (_monitor && !filter_request(request.get()))
-                _monitor->handle_request(port, request);
+              target->handle_request(port, *request);
+              if (_monitor && !filter_request(*request))
+                _monitor->handle_request(port, *request);
             }
           return;
         }
@@ -132,12 +132,12 @@ Virtio_switch::handle_tx_queue(Virtio_port *port)
     {
       auto *target = _ports[idx];
       if (target != port && target->match_vlan(vlan))
-        target->handle_request(port, request);
+        target->handle_request(port, *request);
     }
 
   // Send a copy to the monitor port
-  if (_monitor && !filter_request(request.get()))
-    _monitor->handle_request(port, request);
+  if (_monitor && !filter_request(*request))
+    _monitor->handle_request(port, *request);
 }
 
 void

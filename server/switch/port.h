@@ -14,7 +14,6 @@
 #include "mac_addr.h"
 #include "vlan.h"
 
-#include <l4/cxx/ref_ptr>
 #include <set>
 #include <vector>
 
@@ -196,7 +195,7 @@ public:
   }
 
   /** Get one request from the transmission queue */
-  Virtio_net_request::Request_ptr get_tx_request()
+  std::optional<Virtio_net_request> get_tx_request()
   {
     auto ret = Virtio_net_request::get_request(this, tx_q());
 
@@ -210,10 +209,10 @@ public:
         if (is_trunk())
           {
             if (_vlan_ids.find(ret->vlan_id()) == _vlan_ids.end())
-              return nullptr;
+              return std::nullopt;
           }
         else if (is_access() && ret->has_vlan())
-          return nullptr;
+          return std::nullopt;
       }
 
     return ret;
@@ -236,7 +235,7 @@ public:
    * successful, we delete the transfer object.
    */
   void handle_request(Virtio_port *src_port,
-                      Virtio_net_request::Request_ptr &request)
+                      Virtio_net_request const &request)
   {
     Virtio_vlan_mangle mangle;
 
