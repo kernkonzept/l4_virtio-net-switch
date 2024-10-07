@@ -8,12 +8,11 @@
  */
 #pragma once
 
-#include "virtio_net.h"
 #include "request.h"
-#include "transfer.h"
 #include "mac_addr.h"
 #include "vlan.h"
 
+#include <cassert>
 #include <set>
 #include <vector>
 
@@ -21,44 +20,21 @@
  * \ingroup virtio_net_switch
  * \{
  */
-/**
- * A Port on the Virtio Net Switch
- *
- * A Port object gets created by `Virtio_factory::op_create()`. This function
- * actually only instantiates objects of the types `Switch_port` and
- * `Monitor_port`. The created Port registers itself at the switch's server.
- * Usually, the IPC call for port creation comes from ned. To finalize the
- * setup, the client has to initialize the port during the virtio
- * initialization phase. To do this, the client registers a dataspace for
- * queues and buffers and provides an IRQ to notify the client on incoming
- * network requests.
- */
-class Virtio_port : public Virtio_net
+
+class Port_iface
 {
-  /*
-   * VLAN related management information.
-   *
-   * A port may either be
-   *  - a native port (_vlan_id == VLAN_ID_NATIVE), or
-   *  - an access port (_vlan_id set accordingly), or
-   *  - a trunk port (_vlan_id == VLAN_ID_TRUNK, _vlan_bloom_filter and
-   *    _vlan_ids populated accordingly, or _vlan_all == true).
-   */
-  l4_uint16_t _vlan_id = VLAN_ID_NATIVE; // VID for native/access port
-  l4_uint32_t _vlan_bloom_filter = 0; // Bloom filter for trunk ports
-  std::set<l4_uint16_t> _vlan_ids;  // Authoritative list of trunk VLANs
-  bool _vlan_all; // This port participates in all VLANs (ignoring _vlan_ids)
-
-  inline l4_uint32_t vlan_bloom_hash(l4_uint16_t vid)
-  { return 1UL << (vid & 31U); }
-
-  Mac_addr _mac;  /**< The MAC address of the port. */
-  char _name[20]; /**< Debug name */
-
 public:
+  Port_iface(char const *name)
+  {
+    strncpy(_name, name, sizeof(_name));
+    _name[sizeof(_name) - 1] = '\0';
+  }
+
   // delete copy and assignment
-  Virtio_port(Virtio_port const &) = delete;
-  Virtio_port &operator = (Virtio_port const &) = delete;
+  Port_iface(Port_iface const &) = delete;
+  Port_iface &operator = (Port_iface const &) = delete;
+
+  virtual ~Port_iface() = default;
 
   char const *get_name() const
   { return _name; }
@@ -172,87 +148,7 @@ public:
   inline Mac_addr mac() const
   { return _mac; }
 
-  /**
-   * Create a Virtio net port object
-   */
-  explicit Virtio_port(unsigned vq_max, unsigned num_ds, char const *name,
-                       l4_uint8_t const *mac)
-  : Virtio_net(vq_max),
-    _mac(Mac_addr::Addr_unknown)
-  {
-    init_mem_info(num_ds);
-
-    strncpy(_name, name, sizeof(_name));
-    _name[sizeof(_name) - 1] = '\0';
-
-    Features hf = _dev_config.host_features(0);
-    if (mac)
-      {
-        _mac = Mac_addr((char const *)mac);
-        memcpy((void *)_dev_config.priv_config()->mac, mac,
-               sizeof(_dev_config.priv_config()->mac));
-
-        hf.mac() = true;
-        Dbg d(Dbg::Port, Dbg::Info);
-        d.cprintf("%s: Adding Mac '", _name);
-        _mac.print(d);
-        d.cprintf("' to host features to %x\n", hf.raw);
-      }
-    _dev_config.host_features(0) = hf.raw;
-    _dev_config.reset_hdr();
-    Dbg(Dbg::Port, Dbg::Info)
-      .printf("%s: Set host features to %x\n", _name,
-              _dev_config.host_features(0));
-  }
-
-  /** Check whether there is any work pending on the transmission queue */
-  bool tx_work_pending() const
-  {
-    return L4_LIKELY(tx_q()->ready()) && tx_q()->desc_avail();
-  }
-
-  /** Get one request from the transmission queue */
-  std::optional<Virtio_net_request> get_tx_request()
-  {
-    auto ret = Virtio_net_request::get_request(this, tx_q());
-
-    /*
-     * Trunk ports are required to have a VLAN tag and only accept packets that
-     * belong to a configured VLAN. Access ports must not be VLAN tagged to
-     * prevent double tagging attacks. Otherwise the packet is dropped.
-     */
-    if (ret)
-      {
-        if (is_trunk())
-          {
-            if (!_vlan_all && _vlan_ids.find(ret->vlan_id()) == _vlan_ids.end())
-              return std::nullopt;
-          }
-        else if (is_access() && ret->has_vlan())
-          return std::nullopt;
-      }
-
-    return ret;
-  }
-
-  /**
-   * Drop all requests pending in the transmission queue.
-   *
-   * This is used for monitor ports, which are not allowed to send packets.
-   */
-  void drop_requests()
-  { Virtio_net_request::drop_requests(this, tx_q()); }
-
-  /**
-   * Handle a request  - send it to the guest associated with this port
-   *
-   * We try to send a packet to the guest associated with this
-   * port. To do that, we create a Virtio_net_transfer object to keep
-   * any state related to this transaction. If the transfer is
-   * successful, we delete the transfer object.
-   */
-  void handle_request(Virtio_port *src_port,
-                      Virtio_net_request const &request)
+  Virtio_vlan_mangle create_vlan_mangle(Port_iface *src_port) const
   {
     Virtio_vlan_mangle mangle;
 
@@ -266,7 +162,7 @@ public:
          * ports is never forwarded to trunk ports.
          */
         if (!src_port->is_trunk() && !src_port->is_native())
-          mangle = Virtio_vlan_mangle::add(src_port->_vlan_id);
+          mangle = Virtio_vlan_mangle::add(src_port->get_vlan());
       }
     else
       /*
@@ -276,15 +172,50 @@ public:
       if (src_port->is_trunk())
         mangle = Virtio_vlan_mangle::remove();
 
-    // throws Bad_descriptor exception raised in SRC port queue.
-    switch (Virtio_net_transfer::transfer(request, this, rx_q(), mangle))
-      {
-      case Virtio_net_transfer::Result::Delivered: [[fallthrough]];
-      case Virtio_net_transfer::Result::Exception: return;
-      case Virtio_net_transfer::Result::Dropped: break;
-      }
-
-    // Drop packet that could not be transferred
+    return mangle;
   }
+
+  virtual void rx_notify_disable_and_remember() = 0;
+  virtual void rx_notify_emit_and_enable() = 0;
+
+  virtual bool is_gone() const = 0;
+
+  /** Get one request from the transmission queue */
+  // std::optional<Net_request> get_tx_request() = 0;
+
+  enum class Result
+  {
+    Delivered, Exception, Dropped,
+  };
+
+  /**
+   * Handle a request, i.e. send the request to this port.
+   *
+   * \throws L4virtio::Svr::Bad_descriptor  Exception raised in SRC port queue.
+   */
+  virtual Result handle_request(Port_iface *src_port,
+                                Net_transfer &src) = 0;
+
+protected:
+  /*
+   * VLAN related management information.
+   *
+   * A port may either be
+   *  - a native port (_vlan_id == VLAN_ID_NATIVE), or
+   *  - an access port (_vlan_id set accordingly), or
+   *  - a trunk port (_vlan_id == VLAN_ID_TRUNK, _vlan_bloom_filter and
+   *    _vlan_ids populated accordingly, or _vlan_all == true).
+   */
+  l4_uint16_t _vlan_id = VLAN_ID_NATIVE; // VID for native/access port
+  l4_uint32_t _vlan_bloom_filter = 0; // Bloom filter for trunk ports
+  std::set<l4_uint16_t> _vlan_ids;  // Authoritative list of trunk VLANs
+  bool _vlan_all; // This port participates in all VLANs (ignoring _vlan_ids)
+
+  inline l4_uint32_t vlan_bloom_hash(l4_uint16_t vid)
+  { return 1UL << (vid & 31U); }
+
+  Mac_addr _mac = Mac_addr(Mac_addr::Addr_unknown);  /**< The MAC address of the port. */
+  char _name[20]; /**< Debug name */
 };
+
 /**\}*/

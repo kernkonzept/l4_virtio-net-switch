@@ -54,7 +54,7 @@ public:
    * \retval nullptr  The MAC address is not known (yet)
    * \retval other    Pointer to the destination port
    */
-  Virtio_port *lookup(Mac_addr dst) const
+  Port_iface *lookup(Mac_addr dst) const
   {
     auto entry = _mac_table.find(dst);
     return (entry != _mac_table.end()) ? entry->second->port : nullptr;
@@ -72,7 +72,7 @@ public:
    * port of the table entry is always updated to cope with clients that move
    * between ports.
    */
-  void learn(Mac_addr src, Virtio_port *port)
+  void learn(Mac_addr src, Port_iface *port)
   {
     Dbg info(Dbg::Port, Dbg::Info);
 
@@ -120,7 +120,7 @@ public:
    * we have to iterate over the whole array to delete every reference
    * to the port.
    */
-  void flush(Virtio_port *port)
+  void flush(Port_iface *port)
   {
     typedef std::pair<const Mac_addr, Entry*> TableEntry;
 
@@ -148,7 +148,7 @@ private:
    * points there.
    */
   struct Entry {
-    Virtio_port *port;
+    Port_iface *port;
     Mac_addr addr;
 
     Entry()

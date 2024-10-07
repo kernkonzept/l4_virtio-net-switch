@@ -7,17 +7,13 @@
  */
 #pragma once
 
-#include <l4/l4virtio/server/virtio>
-#include <l4/util/assert.h>
-
-#include "virtio_net_buffer.h"
-#include "virtio_net.h"
 #include "mac_addr.h"
-#include "debug.h"
+#include "virtio_net.h"
+#include "virtio_net_buffer.h"
 #include "vlan.h"
 
-#include <optional>
-#include <utility>
+#include <l4/l4virtio/server/virtio>
+
 
 /**
  * \ingroup virtio_net_switch
@@ -25,257 +21,58 @@
  */
 
 /**
- * Abstraction for a network request
+ * A network request to only a single destination.
  *
- * A `Virtio_net_request` is constructed by the source port, using the static
- * function `get_request()` as part of `Virtio_port::get_tx_request()`.
+ * A `Net_request` can have multiple destinations (being a broadcast
+ * request, for example). That is why it is processed by multiple
+ * `Net_transfer`s, each representing the delivery to a single
+ * destination port.
  *
- * On destruction, `finish()` will be called, which, will trigger the client
- * IRQ of the source client.
+ * `Port_iface::handle_request` uses the `Net_transfer` to move one packet to
+ * the destination of the request.
  */
-class Virtio_net_request
+class Net_transfer
 {
-private:
-  /* needed for Virtqueue::finish() */
-  /** Source Port */
-  Virtio_net *_dev;
-  /** transmission queue of the source port */
-  L4virtio::Svr::Virtqueue *_queue;
-  L4virtio::Svr::Virtqueue::Head_desc _head;
-
-  /* the actual request processor, encapsulates the decoding of the request */
-  L4virtio::Svr::Request_processor _req_proc;
-
-  /* A request to the virtio net layer consists of one or more buffers
-     containing the Virtio_net::Hdr and the actual packet. To make a
-     switching decision we need to be able to look at the packet while
-     still being able access the Virtio_net::Hdr for the actual copy
-     operation. Therefore we keep track of two locations, the header
-     location and the start of the packet (which might be in a
-     different buffer) */
-  Virtio_net::Hdr *_header;
-  Buffer _pkt;
-
-  bool _next_buffer(Buffer *buf)
-  { return _req_proc.next(_dev->mem_info(), buf); }
-
-  /**
-   * Finalize request
-   *
-   * This function calls `finish()` on the source port's transmission queue,
-   * which will result in triggering the source client IRQ.
-   */
-  void finish()
-  {
-    if (_queue == nullptr || !_queue->ready())
-      return;
-
-    Dbg(Dbg::Virtio, Dbg::Trace).printf("%s(%p)\n", __PRETTY_FUNCTION__, this);
-    _queue->finish(_head, _dev, 0);
-    _queue = nullptr;
-  }
-
 public:
+  virtual ~Net_transfer() = default;
 
   /**
-   * Get the location and size of the current buffer.
-   *
-   * \param[out] size   Size of the current buffer.
-   *
-   * \return  Address of the current buffer.
-   *
-   * This function returns the address and size of the currently
-   * active buffer for this request. The buffer might only be a part
-   * of the request, which may consist of more than one buffer.
+   * Identifier for the underlying `Net_request`, used for logging purposes.
    */
-  const uint8_t *buffer(size_t *size) const
-  {
-    *size = _pkt.left;
-    return (uint8_t *)_pkt.pos;
-  }
-
-  void dump_request(Virtio_net *dev) const
-  {
-    uint8_t *packet = (uint8_t *)_pkt.pos;
-    Dbg debug(Dbg::Request, Dbg::Debug, "REQ");
-    if (debug.is_active())
-      {
-        debug.printf("%p: Next packet: %p:%p - %x bytes\n",
-                     dev, _header, packet, _pkt.left);
-        if (_header->flags.raw || _header->gso_type)
-          {
-            debug.cprintf("flags:\t%x\n\t"
-                          "gso_type:\t%x\n\t"
-                          "header len:\t%x\n\t"
-                          "gso size:\t%x\n\t"
-                          "csum start:\t%x\n\t"
-                          "csum offset:\t%x\n"
-                          "\tnum buffer:\t%x\n",
-                          _header->flags.raw,
-                          _header->gso_type, _header->hdr_len,
-                          _header->gso_size,
-                          _header->csum_start, _header->csum_offset,
-                          _header->num_buffers);
-          }
-      }
-    Dbg pkt_debug(Dbg::Packet, Dbg::Debug, "PKT");
-    if (pkt_debug.is_active())
-      {
-        pkt_debug.cprintf("\t");
-        src_mac().print(pkt_debug);
-        pkt_debug.cprintf(" -> ");
-        dst_mac().print(pkt_debug);
-        pkt_debug.cprintf("\n");
-        if (Dbg::is_active(Dbg::Packet, Dbg::Trace))
-          {
-            pkt_debug.cprintf("\n\tEthertype: ");
-            uint16_t ether_type = (uint16_t)*(packet + 12) << 8
-              | (uint16_t)*(packet + 13);
-            char const *protocol;
-            switch (ether_type)
-              {
-              case 0x0800: protocol = "IPv4"; break;
-              case 0x0806: protocol = "ARP"; break;
-              case 0x8100: protocol = "Vlan"; break;
-              case 0x86dd: protocol = "IPv6"; break;
-              case 0x8863: protocol = "PPPoE Discovery"; break;
-              case 0x8864: protocol = "PPPoE Session"; break;
-              default: protocol = nullptr;
-              }
-            if (protocol)
-              pkt_debug.cprintf("%s\n", protocol);
-            else
-              pkt_debug.cprintf("%04x\n", ether_type);
-          }
-      }
-  }
-
-  // delete copy constructor and copy assignment operator
-  Virtio_net_request(Virtio_net_request const &) = delete;
-  Virtio_net_request &operator = (Virtio_net_request const &) = delete;
-
-  // define move constructor and copy assignment operator
-  Virtio_net_request(Virtio_net_request &&other)
-  : _dev(other._dev),
-    _queue(other._queue),
-    _head(std::move(other._head)),
-    _req_proc(std::move(other._req_proc)),
-    _header(other._header),
-    _pkt(std::move(other._pkt))
-  {
-
-    // Invalidate other.
-    other._queue = nullptr;
-  }
-
-  Virtio_net_request &operator = (Virtio_net_request &&other)
-  {
-    // Invalidate self.
-    finish();
-
-    _dev = other._dev;
-    _queue = other._queue;
-    _head = std::move(other._head);
-    _req_proc = std::move(other._req_proc);
-    _header = other._header;
-    _pkt = std::move(other._pkt);
-
-    // Invalidate other.
-    other._queue = nullptr;
-
-    return *this;
-  }
-
-  Virtio_net_request(Virtio_net *dev, L4virtio::Svr::Virtqueue *queue,
-                     L4virtio::Svr::Virtqueue::Request const &req)
-  : _dev(dev), _queue(queue)
-  {
-    _head = _req_proc.start(_dev->mem_info(), req, &_pkt);
-
-    _header = (Virtio_net::Hdr *)_pkt.pos;
-    l4_uint32_t skipped = _pkt.skip(sizeof(Virtio_net::Hdr));
-
-    if (L4_UNLIKELY(   (skipped != sizeof(Virtio_net::Hdr))
-                    || (_pkt.done() && !_next_buffer(&_pkt))))
-      {
-        _header = 0;
-        Dbg(Dbg::Queue, Dbg::Warn).printf("Invalid request\n");
-        return;
-      }
-  }
-
-  ~Virtio_net_request()
-  { finish(); }
-
-  bool valid() const
-  { return _header != 0; }
+  void const *req_id() const { return _req_id; }
 
   /**
-   * Drop all requests of a specific queue.
-   *
-   * This function is used for example to drop all requests in the transmission
-   * queue of a monitor port, since monitor ports are not allowed to transmit
-   * data.
-   *
-   * \param dev    Port of the provided virtqueue.
-   * \param queue  Virtqueue to drop all requests of.
+   * Populate the virtio-net header for the destination.
    */
-  static void drop_requests(Virtio_net *dev,
-                            L4virtio::Svr::Virtqueue *queue)
-  {
-    if (L4_UNLIKELY(!queue->ready()))
-      return;
-
-    if (queue->desc_avail())
-      Dbg(Dbg::Request, Dbg::Debug)
-        .printf("Dropping incoming packets on monitor port\n");
-
-    L4virtio::Svr::Request_processor req_proc;
-    Buffer pkt;
-
-    while (auto req = queue->next_avail())
-      {
-        auto head = req_proc.start(dev->mem_info(), req, &pkt);
-        queue->finish(head, dev, 0);
-      }
-  }
+  virtual void copy_header(Virtio_net::Hdr *dst_header) const = 0;
 
   /**
-   * Construct a request from the next entry of a provided queue.
+   * Buffer containing (a part of) the packet data.
    *
-   * \param dev    Port of the provided virtqueue.
-   * \param queue  Virtqueue to extract next entry from.
+   * Once emptied, a call to `done()` might replenish the buffer, in case the
+   * net request consisted of multiple chained buffers.
    */
-  static std::optional<Virtio_net_request>
-  get_request(Virtio_net *dev, L4virtio::Svr::Virtqueue *queue)
-  {
-    if (L4_UNLIKELY(!queue->ready()))
-      return std::nullopt;
+  Buffer &cur_buf() { return _cur_buf; }
 
-    if (auto r = queue->next_avail())
-      {
-        // Virtio_net_request keeps "a lot of internal state",
-        // therefore we create the object before creating the
-        // state.
-        // We might check later on whether it is possible to
-        // save the state when we actually have to because a
-        // transfer is blocking on a port.
-        auto request = Virtio_net_request(dev, queue, r);
-        if (request.valid())
-          {
-            request.dump_request(dev);
-            return request;
-          }
-      }
-    return std::nullopt;
-  }
+  /**
+   * Check whether the transer has been completed, i.e. the entire packet data
+   * has been copied.
+   *
+   * \retval false  There is remaining packet data that needs to be copied.
+   * \retval true   The entire packet data has been copied.
+   *
+   * \throws L4virtio::Svr::Bad_descriptor  Exception raised in SRC port queue.
+   */
+  virtual bool done() = 0;
 
-  Buffer const &first_buffer() const
-  { return _pkt; }
+protected:
+  Buffer _cur_buf;
+  void const *_req_id;
+};
 
-  Virtio_net::Hdr const *header() const
-  { return _header; }
-
+class Net_request
+{
+public:
   /** Get the Mac address of the destination port. */
   Mac_addr dst_mac() const
   {
@@ -297,7 +94,7 @@ public:
     if (!_pkt.pos || _pkt.left < 14)
       return false;
 
-    uint8_t *p = reinterpret_cast<uint8_t*>(_pkt.pos);
+    uint8_t *p = reinterpret_cast<uint8_t *>(_pkt.pos);
     return p[12] == 0x81U && p[13] == 0x00U;
   }
 
@@ -306,14 +103,65 @@ public:
     if (!has_vlan() || _pkt.left < 16)
       return VLAN_ID_NATIVE;
 
-    uint8_t *p = reinterpret_cast<uint8_t*>(_pkt.pos);
-    return ((uint16_t)p[14] << 8 | (uint16_t)p[15]) & 0xfffU;
+    uint8_t *p = reinterpret_cast<uint8_t *>(_pkt.pos);
+    return (uint16_t{p[14]} << 8 | p[15]) & 0xfffU;
   }
 
-  L4virtio::Svr::Request_processor const &get_request_processor() const
-  { return _req_proc; }
+  /**
+   * Get the location and size of the current buffer.
+   *
+   * \param[out] size   Size of the current buffer.
+   *
+   * \return  Address of the current buffer.
+   *
+   * This function returns the address and size of the currently
+   * active buffer for this request. The buffer might only be a part
+   * of the request, which may consist of more than one buffer.
+   */
+  uint8_t const *buffer(size_t *size) const
+  {
+    *size = _pkt.left;
+    return reinterpret_cast<uint8_t const *>(_pkt.pos);
+  }
 
-  Virtio_net const *dev() const
-  { return _dev; }
+  void dump_pkt() const
+  {
+    Dbg pkt_debug(Dbg::Packet, Dbg::Debug, "PKT");
+    if (pkt_debug.is_active())
+      {
+        pkt_debug.cprintf("\t");
+        src_mac().print(pkt_debug);
+        pkt_debug.cprintf(" -> ");
+        dst_mac().print(pkt_debug);
+        pkt_debug.cprintf("\n");
+
+        Dbg pkt_trace(Dbg::Packet, Dbg::Trace, "PKT");
+        if (pkt_trace.is_active() && _pkt.left >= 14)
+          {
+            uint8_t const *packet = reinterpret_cast<uint8_t const *>(_pkt.pos);
+            pkt_trace.cprintf("\n\tEthertype: ");
+            uint16_t ether_type = uint16_t{packet[12]} << 8 | packet[13];
+            char const *protocol;
+            switch (ether_type)
+              {
+              case 0x0800: protocol = "IPv4"; break;
+              case 0x0806: protocol = "ARP"; break;
+              case 0x8100: protocol = "Vlan"; break;
+              case 0x86dd: protocol = "IPv6"; break;
+              case 0x8863: protocol = "PPPoE Discovery"; break;
+              case 0x8864: protocol = "PPPoE Session"; break;
+              default: protocol = nullptr;
+              }
+            if (protocol)
+              pkt_trace.cprintf("%s\n", protocol);
+            else
+              pkt_trace.cprintf("%04x\n", ether_type);
+          }
+      }
+  }
+
+protected:
+  Buffer _pkt;
 };
+
 /**\}*/

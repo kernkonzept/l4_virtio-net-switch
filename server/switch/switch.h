@@ -9,6 +9,7 @@
 #pragma once
 
 #include "port.h"
+#include "port_l4virtio.h"
 #include "mac_table.h"
 
 /**
@@ -29,8 +30,8 @@
 class Virtio_switch
 {
 private:
-  Virtio_port **_ports;  /**< Array of ports. */
-  Virtio_port *_monitor; /**< The monitor port if there is one. */
+  Port_iface **_ports;  /**< Array of ports. */
+  Port_iface *_monitor; /**< The monitor port if there is one. */
 
   unsigned _max_ports;
   unsigned _max_used;
@@ -39,7 +40,7 @@ private:
   int lookup_free_slot();
 
   /**
-   * Deliver the requests from the transmission queue of a specific port.
+   * Deliver a request from a specific port.
    *
    * In case the MAC address of the destination port of a request is not yet
    * present in the `_mac_table` or if the request is a broadcast request, the
@@ -47,21 +48,25 @@ private:
    *
    * \param port  Port whose transmission queue should be processed.
    */
-  void handle_tx_queue(Virtio_port *port);
+  template<typename REQ>
+  void handle_tx_request(Port_iface *port, REQ const &request);
+
+  template<typename PORT>
+  void handle_tx_requests(PORT *port);
 
 
-  void all_kick_emit_enable()
+  void all_rx_notify_emit_and_enable()
   {
     for (unsigned idx = 0; idx < _max_ports; ++idx)
       if (_ports[idx])
-        _ports[idx]->kick_emit_and_enable();
+        _ports[idx]->rx_notify_emit_and_enable();
   }
 
-  void all_kick_disable_remember()
+  void all_rx_notify_disable_and_remember()
   {
     for (unsigned idx = 0; idx < _max_ports; ++idx)
       if (_ports[idx])
-        _ports[idx]->kick_disable_and_remember();
+        _ports[idx]->rx_notify_disable_and_remember();
   }
 
 public:
@@ -75,22 +80,22 @@ public:
   /**
    * Add a port to the switch.
    *
-   * \param port  A pointer to an already constructed Virtio_port object.
+   * \param port  A pointer to an already constructed Port_iface object.
    *
    * \retval true   Port was added successfully.
    * \retval false  Switch was not able to add the port.
    */
-  bool add_port(Virtio_port *port);
+  bool add_port(Port_iface *port);
 
   /**
    * Add a monitor port to the switch.
    *
-   * \param port  A pointer to an already constructed Virtio_port object.
+   * \param port  A pointer to an already constructed Port_iface object.
    *
    * \retval true   Port was added successfully.
    * \retval false  Switch was not able to add the port.
    */
-  bool add_monitor_port(Virtio_port *port);
+  bool add_monitor_port(Port_iface *port);
 
   /**
    * Check validity of ports.
@@ -104,14 +109,14 @@ public:
   /**
    * Handle an incoming irq on a given port.
    *
-   * Virtio_port does not handle irq related stuff by itself. Someone
+   * L4virtio_port does not handle irq related stuff by itself. Someone
    * else has to do this and has to handle incoming irqs. This
    * function is supposed to be invoked after an irq related to the
    * port came in.
    *
-   * \param port the Virtio_port an irq was triggered on
+   * \param port the L4virtio_port an irq was triggered on
    */
-  void handle_port_irq(Virtio_port *port);
+  void handle_l4virtio_port_irq(L4virtio_port *port);
 
   /**
    * Is there still a free port on this switch available?

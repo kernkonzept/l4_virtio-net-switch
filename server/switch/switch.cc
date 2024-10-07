@@ -14,7 +14,7 @@ Virtio_switch::Virtio_switch(unsigned max_ports)
 : _max_ports{max_ports},
   _max_used{0}
 {
-  _ports = new Virtio_port *[max_ports]();
+  _ports = new Port_iface *[max_ports]();
 }
 
 int
@@ -28,7 +28,7 @@ Virtio_switch::lookup_free_slot()
 }
 
 bool
-Virtio_switch::add_port(Virtio_port *port)
+Virtio_switch::add_port(Port_iface *port)
 {
   if (!port->mac().is_unknown())
     for (unsigned idx = 0; idx < _max_ports; ++idx)
@@ -53,7 +53,7 @@ Virtio_switch::add_port(Virtio_port *port)
 }
 
 bool
-Virtio_switch::add_monitor_port(Virtio_port *port)
+Virtio_switch::add_monitor_port(Port_iface *port)
 {
   if (!_monitor)
     {
@@ -72,8 +72,8 @@ Virtio_switch::check_ports()
 {
   for (unsigned idx = 0; idx < _max_used; ++idx)
     {
-      Virtio_port *port = _ports[idx];
-      if (port && port->obj_cap() && !port->obj_cap().validate().label())
+      Port_iface *port = _ports[idx];
+      if (port && port->is_gone())
         {
           Dbg(Dbg::Port, Dbg::Info)
             .printf("Client on port %p has gone. Deleting...\n", port);
@@ -87,27 +87,39 @@ Virtio_switch::check_ports()
         }
     }
 
-  if (   _monitor && _monitor->obj_cap()
-      && !_monitor->obj_cap().validate().label())
+  if (_monitor && _monitor->is_gone())
     {
       delete(_monitor);
       _monitor = nullptr;
     }
 }
 
+template<typename REQ>
 void
-Virtio_switch::handle_tx_queue(Virtio_port *port)
+Virtio_switch::handle_tx_request(Port_iface *port, REQ const &request)
 {
-  auto request = port->get_tx_request();
-  if (!request)
-    return;
+  // Trunk ports are required to have a VLAN tag and only accept packets that
+  // belong to a configured VLAN.
+  if (port->is_trunk() && !port->match_vlan(request.vlan_id()))
+    return; // Drop packet.
 
-  Mac_addr src = request->src_mac();
+  // Access ports must not be VLAN tagged to prevent double tagging attacks.
+  if (port->is_access() && request.has_vlan())
+    return;  // Drop packet.
+
+  auto handle_request = [](Port_iface *dst_port, Port_iface *src_port,
+                           REQ const &req)
+    {
+      auto transfer_src = req.transfer_src();
+      dst_port->handle_request(src_port, transfer_src);
+    };
+
+  Mac_addr src = request.src_mac();
   _mac_table.learn(src, port);
 
-  auto dst = request->dst_mac();
+  auto dst = request.dst_mac();
   bool is_broadcast = dst.is_broadcast();
-  uint16_t vlan = request->has_vlan() ? request->vlan_id() : port->get_vlan();
+  uint16_t vlan = request.has_vlan() ? request.vlan_id() : port->get_vlan();
   if (L4_LIKELY(!is_broadcast))
     {
       auto *target = _mac_table.lookup(dst);
@@ -118,9 +130,9 @@ Virtio_switch::handle_tx_queue(Virtio_port *port)
           // to reach the target.
           if (target != port && target->match_vlan(vlan))
             {
-              target->handle_request(port, *request);
-              if (_monitor && !filter_request(*request))
-                _monitor->handle_request(port, *request);
+              handle_request(target, port, request);
+              if (_monitor && !filter_request(request))
+                handle_request(_monitor, port, request);
             }
           return;
         }
@@ -132,21 +144,32 @@ Virtio_switch::handle_tx_queue(Virtio_port *port)
     {
       auto *target = _ports[idx];
       if (target != port && target->match_vlan(vlan))
-        target->handle_request(port, *request);
+        handle_request(target, port, request);
     }
 
   // Send a copy to the monitor port
-  if (_monitor && !filter_request(*request))
-    _monitor->handle_request(port, *request);
+  if (_monitor && !filter_request(request))
+    handle_request(_monitor, port, request);
+}
+
+template<typename PORT>
+void
+Virtio_switch::handle_tx_requests(PORT *port)
+{
+  while (auto req = port->get_tx_request())
+    {
+      req->dump_request(port);
+      handle_tx_request(port, *req);
+    }
 }
 
 void
-Virtio_switch::handle_port_irq(Virtio_port *port)
+Virtio_switch::handle_l4virtio_port_irq(L4virtio_port *port)
 {
   /* handle IRQ on one port for the time being */
   if (!port->tx_work_pending())
     Dbg(Dbg::Port, Dbg::Info)
-      .printf("Port %s: Irq without pending work\n", port->get_name());
+      .printf("%s: Irq without pending work\n", port->get_name());
 
   do
     {
@@ -154,13 +177,12 @@ Virtio_switch::handle_port_irq(Virtio_port *port)
       port->rx_q()->disable_notify();
 
       // Within the loop, to trigger before enabling notifications again.
-      all_kick_disable_remember();
+      all_rx_notify_disable_and_remember();
 
       try
         {
           // throws Bad_descriptor exceptions raised on SRC port
-          while (port->tx_work_pending())
-            handle_tx_queue(port);
+          handle_tx_requests(port);
         }
       catch (L4virtio::Svr::Bad_descriptor &e)
         {
@@ -169,11 +191,11 @@ Virtio_switch::handle_port_irq(Virtio_port *port)
                       " -- Signal device error on device %p.\n",
                       __PRETTY_FUNCTION__, e.message(), e.error, port);
             port->device_error();
-            all_kick_emit_enable();
+            all_rx_notify_emit_and_enable();
             return;
         }
 
-      all_kick_emit_enable();
+      all_rx_notify_emit_and_enable();
 
       port->tx_q()->enable_notify();
       port->rx_q()->enable_notify();
@@ -182,5 +204,4 @@ Virtio_switch::handle_port_irq(Virtio_port *port)
       L4virtio::rmb();
     }
   while (port->tx_work_pending());
-
 }

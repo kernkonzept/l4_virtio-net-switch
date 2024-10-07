@@ -96,7 +96,7 @@ class Switch_factory : public L4::Epiface_t<Switch_factory, L4::Factory>
   /**
    * Implement the generic irq related part of the port
    */
-  class Port : public Virtio_port
+  class Port : public L4virtio_port
   {
     // Irq used to notify the guest
     L4::Cap<L4::Irq> _device_notify_irq;
@@ -107,7 +107,7 @@ class Switch_factory : public L4::Epiface_t<Switch_factory, L4::Factory>
   public:
     Port(unsigned vq_max, unsigned num_ds, char const *name,
          l4_uint8_t const *mac)
-    : Virtio_port(vq_max, num_ds, name, mac) {}
+    : L4virtio_port(vq_max, num_ds, name, mac) {}
 
     /** register the host IRQ and the port itself on the switch's server */
     void register_end_points(L4Re::Util::Object_registry* registry,
@@ -146,19 +146,19 @@ class Switch_factory : public L4::Epiface_t<Switch_factory, L4::Factory>
     class Kick_irq : public L4::Irqep_t<Kick_irq>
     {
       Virtio_switch *_switch; /**< pointer to the net switch */
-      Virtio_port *_port;     /**< pointer to the associated port */
+      L4virtio_port *_port;     /**< pointer to the associated port */
 
     public:
       /**
        * Callback for the IRQ
        *
-       * This function redirects the call to `Virtio_switch::handle_port_irq`,
+       * This function redirects the call to `Virtio_switch::handle_l4virtio_port_irq`,
        * since the port cannot finish a transmission on its own.
        */
       void handle_irq()
-      { _switch->handle_port_irq(_port); }
+      { _switch->handle_l4virtio_port_irq(_port); }
 
-      Kick_irq(Virtio_switch *virtio_switch, Virtio_port *port)
+      Kick_irq(Virtio_switch *virtio_switch, L4virtio_port *port)
       : _switch{virtio_switch}, _port{port} {}
     };
 
@@ -194,7 +194,7 @@ class Switch_factory : public L4::Epiface_t<Switch_factory, L4::Factory>
      */
     class Kick_irq : public L4::Irqep_t<Kick_irq>
     {
-      Virtio_port *_port;
+      L4virtio_port *_port;
 
     public:
       /**
@@ -222,7 +222,7 @@ class Switch_factory : public L4::Epiface_t<Switch_factory, L4::Factory>
         while (_port->tx_work_pending());
       }
 
-      Kick_irq(Virtio_port *port) : _port{port} {}
+      Kick_irq(L4virtio_port *port) : _port{port} {}
     };
 
     Kick_irq _kick_irq;
@@ -581,10 +581,10 @@ int main(int argc, char *argv[])
    *     - delegated to  Virtio_switch::check_ports()
    * - Switch_factory::Switch_port
    *   - irqs triggered by clients
-   *     - delegated to Virtio_switch::handle_port_irq()
+   *     - delegated to Virtio_switch::handle_l4virtio_port_irq()
    * - Virtio_net_transfer
    *   - timeouts for pending transfer requests added by
-   *     Virtio_port::handle_request() via registered via
+   *     Port_iface::handle_request() via registered via
    *     L4::Epiface::server_iface()->add_timeout()
    */
   server.loop();

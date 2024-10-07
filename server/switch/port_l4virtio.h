@@ -2,19 +2,20 @@
  * Copyright (C) 2016-2017, 2020, 2022-2024 Kernkonzept GmbH.
  * Author(s): Jean Wolter <jean.wolter@kernkonzept.com>
  *            Alexander Warg <warg@os.inf.tu-dresden.de>
+ *            Georg Kotheimer <georg.kotheimer@kernkonzept.com>
  *
  * This file is distributed under the terms of the GNU General Public
  * License, version 2.  Please see the COPYING-GPL-2 file for details.
  */
 #pragma once
 
+#include "port.h"
+#include "request_l4virtio.h"
 #include "virtio_net.h"
-#include "request.h"
-#include "vlan.h"
-
-#include <vector>
 
 #include <l4/cxx/pair>
+
+#include <vector>
 
 /**
  * \ingroup virtio_net_switch
@@ -22,65 +23,99 @@
  */
 
 /**
- * A network request to only a single destination.
+ * A Port on the Virtio Net Switch
  *
- * A `Virtio_net_request` can have multiple destinations (being a broadcast
- * request, for example). That is why it is processed by multiple
- * `Virtio_net_transfer`s, each representing the delivery to a single
- * destination port.
- *
- * `Virtio_port::handle_request` uses the transfer function to move one
- * packet to the destination of the request.
+ * A Port object gets created by `Virtio_factory::op_create()`. This function
+ * actually only instantiates objects of the types `Switch_port` and
+ * `Monitor_port`. The created Port registers itself at the switch's server.
+ * Usually, the IPC call for port creation comes from ned. To finalize the
+ * setup, the client has to initialize the port during the virtio
+ * initialization phase. To do this, the client registers a dataspace for
+ * queues and buffers and provides an IRQ to notify the client on incoming
+ * network requests.
  */
-class Virtio_net_transfer
+class L4virtio_port : public Port_iface, public Virtio_net
 {
 public:
-  enum class Result
+  /**
+   * Create a Virtio net port object
+   */
+  explicit L4virtio_port(unsigned vq_max, unsigned num_ds, char const *name,
+                         l4_uint8_t const *mac)
+  : Port_iface(name), Virtio_net(vq_max)
   {
-    Delivered, Exception, Dropped,
-  };
+    init_mem_info(num_ds);
+
+    Features hf = _dev_config.host_features(0);
+    if (mac)
+      {
+        _mac = Mac_addr((char const *)mac);
+        memcpy((void *)_dev_config.priv_config()->mac, mac,
+               sizeof(_dev_config.priv_config()->mac));
+
+        hf.mac() = true;
+        Dbg d(Dbg::Port, Dbg::Info);
+        d.cprintf("%s: Adding Mac '", _name);
+        _mac.print(d);
+        d.cprintf("' to host features to %x\n", hf.raw);
+      }
+    _dev_config.host_features(0) = hf.raw;
+    _dev_config.reset_hdr();
+    Dbg(Dbg::Port, Dbg::Info)
+      .printf("%s: Set host features to %x\n", _name,
+              _dev_config.host_features(0));
+  }
+
+  void rx_notify_disable_and_remember() override
+  {
+    kick_disable_and_remember();
+  }
+
+  void rx_notify_emit_and_enable() override
+  {
+    kick_emit_and_enable();
+  }
+
+  bool is_gone() const override
+  {
+    return obj_cap() && !obj_cap().validate().label();
+  }
+
+  /** Check whether there is any work pending on the transmission queue */
+  bool tx_work_pending() const
+  {
+    return L4_LIKELY(tx_q()->ready()) && tx_q()->desc_avail();
+  }
+
+  /** Get one request from the transmission queue */
+  std::optional<Virtio_net_request> get_tx_request()
+  {
+    return Virtio_net_request::get_request(this, tx_q());
+  }
 
   /**
-   * Deliver the request to the destination port
+   * Drop all requests pending in the transmission queue.
    *
-   * \param request   The associated network request
-   * \param dst_dev   The destination port
-   * \param dst_queue The Receive queue of the destination port
-   * \param mangle    The VLAN packet rewriting handler for the transfer
-   *
-   * \throws L4virtio::Svr::Bad_descriptor  Exception raised in SRC port queue.
+   * This is used for monitor ports, which are not allowed to send packets.
    */
-  static
-  Result transfer(Virtio_net_request const &request,
-                  Virtio_net *dst_dev,
-                  L4virtio::Svr::Virtqueue *dst_queue,
-                  Virtio_vlan_mangle &mangle)
+  void drop_requests()
+  { Virtio_net_request::drop_requests(this, tx_q()); }
+
+  Result handle_request(Port_iface *src_port, Net_transfer &src) override
   {
-    Dbg trace(Dbg::Request, Dbg::Trace, "REQ");
-    trace.printf("Transfer request: %p\n", request.header());
+    Virtio_vlan_mangle mangle = create_vlan_mangle(src_port);
 
-    /*
-     * src description
-     *
-     * We already looked at the very first buffer to find the target of
-     * the packet. The request processor of the "parent request"
-     * contains the current state of the transaction up to this
-     * point. Since there might be more then one target for the request
-     * we have to keep track of our own state and need our own request
-     * processor instance, which will be initialized using the current
-     * state of the "parent request".
-     */
-    L4virtio::Svr::Request_processor src_req_proc = request.get_request_processor();
+    Dbg trace(Dbg::Request, Dbg::Trace, "REQ-VIO");
+    trace.printf("%s: Transfer request %p.\n", _name, src.req_id());
 
-    /* the buffer descriptors used for this transaction and the amount
-     * of bytes copied to the current target descriptor */
-    Buffer src = request.first_buffer();
     Buffer dst;
     int total = 0;
     l4_uint16_t num_merged = 0;
     typedef cxx::Pair<L4virtio::Svr::Virtqueue::Head_desc, l4_uint32_t> Consumed_entry;
     std::vector<Consumed_entry> consumed;
 
+    Virtio_net *dst_dev = this;
+    Virtqueue *dst_queue = rx_q();
     L4virtio::Svr::Virtqueue::Head_desc dst_head;
     L4virtio::Svr::Request_processor dst_req_proc;
     Virtio_net::Hdr *dst_header = nullptr;
@@ -89,7 +124,7 @@ public:
       {
         try
           {
-            if (src.done() && !src_req_proc.next(request.dev()->mem_info(), &src))
+            if (src.done())
               // Request completely copied to destination.
               break;
           }
@@ -120,8 +155,7 @@ public:
 
             if (L4_UNLIKELY(!r))
               {
-                trace.printf("\tTransfer %p failed, destination queue depleted, dropping.\n",
-                             request.header());
+                trace.printf("\tTransfer failed, destination queue depleted, dropping.\n");
                 // Abort incomplete transfer.
                 if (!consumed.empty())
                   dst_queue->rewind_avail(consumed.front().first);
@@ -149,7 +183,7 @@ public:
                   throw L4::Runtime_error(-L4_EINVAL,
                                           "Target buffer too small for header");
                 dst_header = reinterpret_cast<Virtio_net::Hdr *>(dst.pos);
-                trace.printf("\t: Copying header to %p (size: %u)\n",
+                trace.printf("\tCopying header to %p (size: %u)\n",
                              dst.pos, dst.left);
                 /*
                  * Header and csum offloading/general segmentation offloading
@@ -193,7 +227,7 @@ public:
                  * invalid checksum could be successfully delivered.
                  */
                 total = sizeof(Virtio_net::Hdr);
-                memcpy(dst_header, request.header(), total);
+                src.copy_header(dst_header);
                 mangle.rewrite_hdr(dst_header);
                 dst.skip(total);
               }
@@ -219,17 +253,18 @@ public:
 
         if (has_dst_buffer)
           {
-            trace.printf("\t: Copying %p#%p:%u (%x) -> %p#%p:%u  (%x)\n",
-                         request.dev(),
-                         src.pos, src.left, src.left,
-                         dst_dev, dst.pos, dst.left, dst.left);
+            auto &src_buf = src.cur_buf();
+            trace.printf("\tCopying %p#%p:%u (%x) -> %p#%p:%u  (%x)\n",
+                         src_port, src_buf.pos, src_buf.left, src_buf.left,
+                         static_cast<Port_iface *>(this),
+                         dst.pos, dst.left, dst.left);
 
-            total += mangle.copy_pkt(dst, src);
+            total += mangle.copy_pkt(dst, src_buf);
           }
         else
           {
             // save descriptor information for later
-            trace.printf("\t: Saving descriptor for later\n");
+            trace.printf("\tSaving descriptor for later\n");
             consumed.push_back(Consumed_entry(dst_head, total));
             total = 0;
             dst_head = L4virtio::Svr::Virtqueue::Head_desc();
@@ -245,7 +280,7 @@ public:
     if (!dst_header)
       {
         if (!total)
-          trace.printf("\tTransfer %p - not started yet, dropping\n", request.header());
+          trace.printf("\tTransfer - not started yet, dropping\n");
         return Result::Dropped;
       }
 
@@ -265,8 +300,8 @@ public:
         trace.printf("\tTransfer - Invoke dst_queue->finish(iter)\n");
         dst_queue->finish(consumed.begin(), consumed.end(), dst_dev);
       }
-
     return Result::Delivered;
   }
 };
+
 /**\}*/
