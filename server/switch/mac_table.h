@@ -7,10 +7,12 @@
  */
 #pragma once
 
+#include "mac_addr.h"
+#include "port.h"
+
 #include <array>
 #include <map>
 #include <algorithm>
-#include "mac_addr.h"
 /**
  * \ingroup virtio_net_switch
  * \{
