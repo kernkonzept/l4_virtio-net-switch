@@ -1,2 +1,3 @@
 requires: libstdc++ stdlibs l4virtio-server
+optional: ixylon
 maintainer: jean.wolter@kernkonzept.com

@@ -9,4 +9,9 @@ config VNS_PORT_FILTER
 
 	  If unsure, select N.
 
+config VNS_IXL
+	bool "Support Ixylon ports"
+	help
+	  This enables adding Ixylon network ports to the virtual network switch.
+
 endmenu

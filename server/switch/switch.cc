@@ -228,3 +228,13 @@ Virtio_switch::handle_l4virtio_port_tx(L4virtio_port *port)
 
   return true;
 }
+
+#if CONFIG_VNS_IXL
+void
+Virtio_switch::handle_ixl_port_irq(Ixl_port *port)
+{
+  all_rx_notify_disable_and_remember();
+  handle_tx_requests(port);
+  all_rx_notify_emit_and_enable();
+}
+#endif

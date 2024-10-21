@@ -12,6 +12,10 @@
 #include "port_l4virtio.h"
 #include "mac_table.h"
 
+#if CONFIG_VNS_IXL
+#include "port_ixl.h"
+#endif
+
 /**
  * \ingroup virtio_net_switch
  * \{
@@ -120,6 +124,10 @@ public:
    * \retval false  Port's entire TX queue was processed.
    */
   bool handle_l4virtio_port_tx(L4virtio_port *port);
+
+#if CONFIG_VNS_IXL
+  void handle_ixl_port_irq(Ixl_port *port);
+#endif
 
   /**
    * Is there still a free port on this switch available?

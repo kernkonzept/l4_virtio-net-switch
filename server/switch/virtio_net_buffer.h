@@ -28,6 +28,12 @@ struct Buffer : L4virtio::Svr::Data_buffer
     left = d.len;
   }
 
+  Buffer(char *data, l4_uint32_t size)
+  {
+    pos = data;
+    left = size;
+  }
+
   template<typename T>
   explicit Buffer(T *p) : Data_buffer(p) {};
 };

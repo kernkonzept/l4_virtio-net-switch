@@ -557,6 +557,76 @@ public:
   };
 };
 
+#if CONFIG_VNS_IXL
+/**
+ * Implement the irq related part of an ixylon port.
+ */
+class Ixl_hw_port : public Ixl_port
+{
+  class Receive_irq : public L4::Irqep_t<Receive_irq>
+  {
+    Virtio_switch *_switch;
+    Ixl_port *_port;
+
+  public:
+    /**
+     * Callback for the IRQ
+     *
+     * This function redirects the call to `Virtio_switch::handle_ixl_port_irq`,
+     * since the port cannot finish a transmission on its own.
+     */
+    void handle_irq()
+    {
+      _port->dev()->check_recv_irq(0);
+      _switch->handle_ixl_port_irq(_port);
+      _port->dev()->ack_recv_irq(0);
+    }
+
+    Receive_irq(Virtio_switch *virtio_switch, Ixl_port *port)
+    : _switch{virtio_switch}, _port{port} {}
+  };
+
+  Receive_irq _recv_irq;
+
+public:
+  Ixl_hw_port(L4Re::Util::Object_registry *registry,
+              Virtio_switch *virtio_switch, Ixl::Ixl_device *dev)
+  : Ixl_port(dev), _recv_irq(virtio_switch, this)
+  {
+    L4::Cap<L4::Irq> recv_irq_cap = L4Re::chkcap(dev->get_recv_irq(0), "Get receive IRQ");
+    L4Re::chkcap(registry->register_obj(&_recv_irq, recv_irq_cap),
+                 "Register receive IRQ.");
+    recv_irq_cap->unmask();
+  }
+
+  ~Ixl_hw_port() override
+  {
+    server.registry()->unregister_obj(&_recv_irq);
+  }
+};
+
+static void
+discover_ixl_devices(L4::Cap<L4vbus::Vbus> vbus, Virtio_switch *virtio_switch)
+{
+  struct Ixl::Dev_cfg cfg;
+  // Configure the device in asynchronous notify mode.
+  cfg.irq_timeout_ms = -1;
+
+  // TODO: Support detecting multiple devices on a Vbus.
+  // Setup the driver (also resets and initializes the NIC).
+  Ixl::Ixl_device *dev = Ixl::Ixl_device::ixl_init(vbus, 0, cfg);
+  if (!dev)
+    // No Ixl supported device found, Ixl already printed an error message.
+    return;
+
+  Ixl_hw_port *hw_port = new Ixl_hw_port(server.registry(), virtio_switch, dev);
+  if (!virtio_switch->add_port(hw_port))
+    {
+      Err().printf("error adding ixl port\n");
+      delete hw_port;
+    }
+}
+#endif
 
 int main(int argc, char *argv[])
 {
@@ -573,6 +643,13 @@ int main(int argc, char *argv[])
     printf("Hello from l4virtio switch\n");
 
   Virtio_switch *virtio_switch = new Virtio_switch(opts->get_max_ports());
+
+#if CONFIG_VNS_IXL
+  auto vbus = L4Re::Env::env()->get_cap<L4vbus::Vbus>("vbus");
+  if (vbus.is_valid())
+    discover_ixl_devices(vbus, virtio_switch);
+#endif
+
   Switch_factory *factory = new Switch_factory(virtio_switch,
                                                opts->get_virtq_max_num());
   L4::Cap<void> cap = server.registry()->register_obj(factory, "svr");

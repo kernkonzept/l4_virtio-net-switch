@@ -78,6 +78,11 @@ the virtual network switch accepts the following command line options:
 
   The option parameter is the name of a dataspace capability.
 
+### Hardware devices
+To plug hardware devices into the switch, provide a Vbus capability with the
+name `vbus` when starting the switch.
+To use this feature, you have to enable the `VNS_IXL` config option.
+
 ## Connecting a client
 
 First, a virtual network port has to be created using the following Ned-Lua
