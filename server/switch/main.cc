@@ -567,7 +567,7 @@ int main(int argc, char *argv[])
 
   Virtio_switch *virtio_switch = new Virtio_switch(opts->get_max_ports());
   Switch_factory *factory = new Switch_factory(virtio_switch,
-                                                opts->get_virtq_max_num());
+                                               opts->get_virtq_max_num());
   L4::Cap<void> cap = server.registry()->register_obj(factory, "svr");
   if (!cap.is_valid())
     {
