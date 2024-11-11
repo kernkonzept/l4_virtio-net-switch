@@ -15,9 +15,7 @@
  */
 
 /**
- * class
- *
- * TODO: Document
+ * Data buffer used to transfer packets.
  */
 struct Buffer : L4virtio::Svr::Data_buffer
 {
