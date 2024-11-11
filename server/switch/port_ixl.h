@@ -22,6 +22,7 @@
 class Ixl_port : public Port_iface
 {
 public:
+  static constexpr unsigned Tx_batch_size = 32;
   static constexpr unsigned Num_bufs = 1024;
   static constexpr unsigned Buf_size = 2048;
   static constexpr l4_uint64_t Max_mem_size = 1ULL << 28;
@@ -42,17 +43,21 @@ public:
   void rx_notify_emit_and_enable() override {}
   bool is_gone() const override { return false; }
 
+  /** Check whether there is any work pending on the transmission queue */
+  bool tx_work_pending()
+  {
+    fetch_tx_requests();
+    return _tx_batch_idx < _tx_batch_len;
+  }
+
   /** Get one request from the transmission queue */
   std::optional<Ixl_net_request> get_tx_request()
   {
-    // OPTIMIZE: Batch receive, then cache in member array, to avoid frequent
-    //           interactions with the hardware?
-    Ixl::pkt_buf *buf;
-    if (_dev->rx_batch(0, &buf, 1) < 1)
+    fetch_tx_requests();
+    if (_tx_batch_idx < _tx_batch_len)
+      return std::make_optional<Ixl_net_request>(_tx_batch[_tx_batch_idx++]);
+    else
       return std::nullopt;
-
-    // Eventually free the packet...
-    return std::make_optional<Ixl_net_request>(buf);
   }
 
   Result handle_request(Port_iface *src_port, Net_transfer &src) override
@@ -129,8 +134,23 @@ public:
   Ixl::Ixl_device *dev() { return _dev; }
 
 private:
+  void fetch_tx_requests()
+  {
+    if (_tx_batch_idx < _tx_batch_len)
+      // Previous batch not yet fully processed.
+      return;
+
+    // Batch receive, then cache in member array, to avoid frequent interactions
+    // with the hardware.
+    _tx_batch_len = _dev->rx_batch(0, _tx_batch, Tx_batch_size);
+    _tx_batch_idx = 0;
+  }
+
   Ixl::Ixl_device *_dev;
   Ixl::Mempool _mempool;
+  Ixl::pkt_buf *_tx_batch[Tx_batch_size];
+  unsigned _tx_batch_idx = 0;
+  unsigned _tx_batch_len = 0;
 };
 
 /**\}*/
