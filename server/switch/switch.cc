@@ -230,11 +230,29 @@ Virtio_switch::handle_l4virtio_port_tx(L4virtio_port *port)
 }
 
 #if CONFIG_VNS_IXL
-void
-Virtio_switch::handle_ixl_port_irq(Ixl_port *port)
+bool
+Virtio_switch::handle_ixl_port_tx(Ixl_port *port)
 {
-  all_rx_notify_disable_and_remember();
-  handle_tx_requests(port);
+  unsigned num_reqs_handled = 0;
+
+  all_rx_notify_disable_and_remember(); 
+  handle_tx_requests(port, num_reqs_handled);
   all_rx_notify_emit_and_enable();
+
+  if (num_reqs_handled >= Tx_burst && port->tx_work_pending())
+    {
+      Dbg(Dbg::Port, Dbg::Info)
+        .printf("%s: Tx burst limit hit, reschedule remaining Tx work.\n",
+                port->get_name());
+
+      // Port has hit its TX burst limit, so for fairness reasons, stop
+      // processing TX work from this port, and instead reschedule the
+      // pending work for later.
+      port->reschedule_pending_tx();
+      return false;
+    }
+
+  return true;
 }
 #endif
+

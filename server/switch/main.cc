@@ -563,40 +563,71 @@ public:
  */
 class Ixl_hw_port : public Ixl_port
 {
-  class Receive_irq : public L4::Irqep_t<Receive_irq>
+  template<typename Derived>
+  class Port_irq : public L4::Irqep_t<Derived>
   {
+  public:
+    Port_irq(Virtio_switch *virtio_switch, Ixl_port *port)
+    : _switch{virtio_switch}, _port{port} {}
+
+  protected:
     Virtio_switch *_switch;
     Ixl_port *_port;
+  };
 
+  class Receive_irq : public Port_irq<Receive_irq>
+  {
   public:
+    using Port_irq::Port_irq;
+
     /**
      * Callback for the IRQ
      *
-     * This function redirects the call to `Virtio_switch::handle_ixl_port_irq`,
+     * This function redirects the call to `Virtio_switch::handle_ixl_port_tx`,
      * since the port cannot finish a transmission on its own.
      */
     void handle_irq()
     {
-      _port->dev()->check_recv_irq(0);
-      _switch->handle_ixl_port_irq(_port);
-      _port->dev()->ack_recv_irq(0);
-    }
+      if (!_port->dev()->check_recv_irq(0))
+        return;
 
-    Receive_irq(Virtio_switch *virtio_switch, Ixl_port *port)
-    : _switch{virtio_switch}, _port{port} {}
+      if (_switch->handle_ixl_port_tx(_port))
+        _port->dev()->ack_recv_irq(0);
+    }
+  };
+
+  class Reschedule_tx_irq : public Port_irq<Reschedule_tx_irq>
+  {
+  public:
+    using Port_irq::Port_irq;
+
+    void handle_irq()
+    {
+      if (_switch->handle_ixl_port_tx(_port))
+        // Entire TX queue handled, re-enable the recv IRQ again.
+        _port->dev()->ack_recv_irq(0);
+    }
   };
 
   Receive_irq _recv_irq;
+  Reschedule_tx_irq _reschedule_tx_irq;
 
 public:
   Ixl_hw_port(L4Re::Util::Object_registry *registry,
               Virtio_switch *virtio_switch, Ixl::Ixl_device *dev)
-  : Ixl_port(dev), _recv_irq(virtio_switch, this)
+  : Ixl_port(dev),
+    _recv_irq(virtio_switch, this),
+    _reschedule_tx_irq(virtio_switch, this)
   {
     L4::Cap<L4::Irq> recv_irq_cap = L4Re::chkcap(dev->get_recv_irq(0), "Get receive IRQ");
     L4Re::chkcap(registry->register_obj(&_recv_irq, recv_irq_cap),
                  "Register receive IRQ.");
     recv_irq_cap->unmask();
+
+    _pending_tx_reschedule =
+      L4Re::chkcap(registry->register_irq_obj(&_reschedule_tx_irq),
+                   "Register TX reschedule IRQ.");
+    _pending_tx_reschedule->unmask();
   }
 
   ~Ixl_hw_port() override
