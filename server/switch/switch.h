@@ -83,11 +83,8 @@ public:
    * Check whether all ports are still used and remove any unused
    * (unreferenced) ports. Shall be invoked after an incoming cap
    * deletion irq to remove ports without clients.
-   *
-   * \retval true   There is at least one invalid port.
-   * \retval false  No invalid port found.
    */
-  bool check_ports();
+  void check_ports();
 
   /**
    * Handle an incoming irq on a given port.

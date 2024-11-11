@@ -67,7 +67,7 @@ Virtio_switch::add_monitor_port(Virtio_port *port)
   return false;
 }
 
-bool
+void
 Virtio_switch::check_ports()
 {
   for (unsigned idx = 0; idx < _max_used; ++idx)
@@ -84,7 +84,6 @@ Virtio_switch::check_ports()
 
           _mac_table.flush(port);
           delete(port);
-          return true;
         }
     }
 
@@ -93,10 +92,7 @@ Virtio_switch::check_ports()
     {
       delete(_monitor);
       _monitor = nullptr;
-      return true;
     }
-
-  return false;
 }
 
 void
