@@ -196,6 +196,9 @@ public:
   virtual Result handle_request(Port_iface *src_port,
                                 Net_transfer &src) = 0;
 
+  void reschedule_pending_tx()
+  { _pending_tx_reschedule->trigger(); }
+
 protected:
   /*
    * VLAN related management information.
@@ -213,6 +216,11 @@ protected:
 
   inline l4_uint32_t vlan_bloom_hash(l4_uint16_t vid)
   { return 1UL << (vid & 31U); }
+
+  /**
+   * Reschedule TX request handling for port that hit its TX burst limit.
+   */
+  L4::Cap<L4::Irq> _pending_tx_reschedule;
 
   Mac_addr _mac = Mac_addr(Mac_addr::Addr_unknown);  /**< The MAC address of the port. */
   char _name[20]; /**< Debug name */

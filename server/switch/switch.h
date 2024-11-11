@@ -37,6 +37,10 @@ private:
   unsigned _max_used;
   Mac_table<> _mac_table;
 
+  // Limits the number of consecutive TX requests a port can process before
+  // being interrupted to ensure fairness to other ports.
+  static constexpr unsigned Tx_burst = 128;
+
   int lookup_free_slot();
 
   /**
@@ -52,7 +56,7 @@ private:
   void handle_tx_request(Port_iface *port, REQ const &request);
 
   template<typename PORT>
-  void handle_tx_requests(PORT *port);
+  void handle_tx_requests(PORT *port, unsigned &num_reqs_handled);
 
 
   void all_rx_notify_emit_and_enable()
@@ -107,16 +111,15 @@ public:
   void check_ports();
 
   /**
-   * Handle an incoming irq on a given port.
+   * Handle TX queue of the given port.
    *
-   * L4virtio_port does not handle irq related stuff by itself. Someone
-   * else has to do this and has to handle incoming irqs. This
-   * function is supposed to be invoked after an irq related to the
-   * port came in.
+   * \param port    L4virtio_port to handle pending TX work for.
    *
-   * \param port the L4virtio_port an irq was triggered on
+   * \retval true   Port hit its TX burst limit, and thus a TX pending
+   *                reschedule notification was queued.
+   * \retval false  Port's entire TX queue was processed.
    */
-  void handle_l4virtio_port_irq(L4virtio_port *port);
+  bool handle_l4virtio_port_tx(L4virtio_port *port);
 
   /**
    * Is there still a free port on this switch available?

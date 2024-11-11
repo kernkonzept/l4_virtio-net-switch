@@ -152,25 +152,34 @@ class Switch_factory : public L4::Epiface_t<Switch_factory, L4::Factory>
       /**
        * Callback for the IRQ
        *
-       * This function redirects the call to `Virtio_switch::handle_l4virtio_port_irq`,
+       * This function redirects the call to `Virtio_switch::handle_l4virtio_port_tx`,
        * since the port cannot finish a transmission on its own.
        */
       void handle_irq()
-      { _switch->handle_l4virtio_port_irq(_port); }
+      { _switch->handle_l4virtio_port_tx(_port); }
 
       Kick_irq(Virtio_switch *virtio_switch, L4virtio_port *port)
       : _switch{virtio_switch}, _port{port} {}
     };
 
     Kick_irq _kick_irq; /**< The IRQ to notify the client. */
+    Kick_irq _reschedule_tx_irq;
 
   public:
     Switch_port(L4Re::Util::Object_registry *registry,
                 Virtio_switch *virtio_switch, unsigned vq_max, unsigned num_ds,
                 char const *name, l4_uint8_t const *mac)
     : Port(vq_max, num_ds, name, mac),
-      _kick_irq(virtio_switch, this)
-    { register_end_points(registry, &_kick_irq); }
+      _kick_irq(virtio_switch, this),
+      _reschedule_tx_irq(virtio_switch, this)
+    {
+      register_end_points(registry, &_kick_irq);
+
+      _pending_tx_reschedule =
+        L4Re::chkcap(registry->register_irq_obj(&_reschedule_tx_irq),
+                     "Register TX reschedule IRQ.");
+      _pending_tx_reschedule->unmask();
+    }
 
     virtual ~Switch_port()
     {
@@ -581,7 +590,7 @@ int main(int argc, char *argv[])
    *     - delegated to  Virtio_switch::check_ports()
    * - Switch_factory::Switch_port
    *   - irqs triggered by clients
-   *     - delegated to Virtio_switch::handle_l4virtio_port_irq()
+   *     - delegated to Virtio_switch::handle_l4virtio_port_tx()
    * - Virtio_net_transfer
    *   - timeouts for pending transfer requests added by
    *     Port_iface::handle_request() via registered via

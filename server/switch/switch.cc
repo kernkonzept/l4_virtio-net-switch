@@ -154,27 +154,48 @@ Virtio_switch::handle_tx_request(Port_iface *port, REQ const &request)
 
 template<typename PORT>
 void
-Virtio_switch::handle_tx_requests(PORT *port)
+Virtio_switch::handle_tx_requests(PORT *port, unsigned &num_reqs_handled)
 {
   while (auto req = port->get_tx_request())
     {
       req->dump_request(port);
       handle_tx_request(port, *req);
+
+      if (++num_reqs_handled >= Tx_burst)
+        // Port has hit its TX burst limit.
+        break;
     }
 }
 
-void
-Virtio_switch::handle_l4virtio_port_irq(L4virtio_port *port)
+bool
+Virtio_switch::handle_l4virtio_port_tx(L4virtio_port *port)
 {
   /* handle IRQ on one port for the time being */
   if (!port->tx_work_pending())
-    Dbg(Dbg::Port, Dbg::Info)
+    Dbg(Dbg::Port, Dbg::Debug)
       .printf("%s: Irq without pending work\n", port->get_name());
 
+  unsigned num_reqs_handled = 0;
   do
     {
       port->tx_q()->disable_notify();
       port->rx_q()->disable_notify();
+
+      if (num_reqs_handled >= Tx_burst)
+        {
+          Dbg(Dbg::Port, Dbg::Debug)
+            .printf(
+              "%s: Tx burst limit hit, reschedule remaining Tx work.\n",
+              port->get_name());
+
+          // Port has hit its TX burst limit, so for fairness reasons, stop
+          // processing TX work from this port, and instead reschedule the
+          // pending work for later.
+          port->reschedule_pending_tx();
+          // NOTE: Notifications for this port remain disabled, until eventually
+          // the reschedule handler calls `handle_l4virtio_port_tx` again.
+          return false;
+        }
 
       // Within the loop, to trigger before enabling notifications again.
       all_rx_notify_disable_and_remember();
@@ -182,7 +203,7 @@ Virtio_switch::handle_l4virtio_port_irq(L4virtio_port *port)
       try
         {
           // throws Bad_descriptor exceptions raised on SRC port
-          handle_tx_requests(port);
+          handle_tx_requests(port, num_reqs_handled);
         }
       catch (L4virtio::Svr::Bad_descriptor &e)
         {
@@ -192,7 +213,7 @@ Virtio_switch::handle_l4virtio_port_irq(L4virtio_port *port)
                       __PRETTY_FUNCTION__, e.message(), e.error, port);
             port->device_error();
             all_rx_notify_emit_and_enable();
-            return;
+            return false;
         }
 
       all_rx_notify_emit_and_enable();
@@ -204,4 +225,6 @@ Virtio_switch::handle_l4virtio_port_irq(L4virtio_port *port)
       L4virtio::rmb();
     }
   while (port->tx_work_pending());
+
+  return true;
 }
