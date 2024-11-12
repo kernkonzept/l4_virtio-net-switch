@@ -16,8 +16,8 @@ Created: 2023-09-19T00:00:00Z
 PackageName: virtio-net-switch
 SPDXID: SPDXRef-virtio-net-switch
 PackageOriginator: Organization: Kernkonzept GmbH (info@kernkonzept.com)
-PackageLicenseDeclared: GPL-2.0-only
-PackageLicenseConcluded: GPL-2.0-only
+PackageLicenseDeclared: MIT
+PackageLicenseConcluded: MIT
 FilesAnalyzed: false
 PackageCopyrightText: NOASSERTION
 PackageDownloadLocation: NOASSERTION
