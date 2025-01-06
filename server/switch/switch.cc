@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2016-2018, 2020 Kernkonzept GmbH.
+ * Copyright (C) 2016-2018, 2020, 2023-2024 Kernkonzept GmbH.
  * Author(s): Jean Wolter <jean.wolter@kernkonzept.com>
  *            Alexander Warg <warg@os.inf.tu-dresden.de>
  *
