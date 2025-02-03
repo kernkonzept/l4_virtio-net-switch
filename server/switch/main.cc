@@ -57,23 +57,6 @@ using Ds_vector = std::vector<L4::Cap<L4Re::Dataspace>>;
 static std::shared_ptr<Ds_vector> trusted_dataspaces;
 
 static bool
-parse_int_optstring(char const *optstring, int *out)
-{
-  char *endp;
-
-  errno = 0;
-  long num = strtol(optstring, &endp, 10);
-
-  // check that long can be converted to int
-  if (errno || *endp != '\0' || num < INT_MIN || num > INT_MAX)
-    return false;
-
-  *out = num;
-
-  return true;
-}
-
-static bool
 parse_int_param(L4::Ipc::Varg const &param, char const *prefix, int *out)
 {
   l4_size_t headlen = strlen(prefix);

@@ -19,6 +19,23 @@
 #include "debug.h"
 #include "options.h"
 
+bool
+parse_int_optstring(char const *optstring, int *out)
+{
+  char *endp;
+
+  errno = 0;
+  long num = strtol(optstring, &endp, 10);
+
+  // check that long can be converted to int
+  if (errno || *endp != '\0' || num < INT_MIN || num > INT_MAX)
+    return false;
+
+  *out = num;
+
+  return true;
+}
+
 static int
 verbosity_mask_from_string(char const *str, unsigned *mask)
 {
@@ -141,22 +158,29 @@ Options::parse_cmd_line(int argc, char **argv,
       switch (opt)
         {
         case 's':
-          _virtq_max_num = atoi(optarg);
+
           // QueueNumMax must be power of 2 between 1 and 0x8000
-          if (_virtq_max_num < 1 || _virtq_max_num > 32768
+          if (!parse_int_optstring(optarg, &_virtq_max_num)
+              || _virtq_max_num < 1 || _virtq_max_num > 32768
               || (_virtq_max_num & (_virtq_max_num - 1)))
             {
-              info.printf("Max number of virtqueue buffers must be power of 2"
-                          " between 1 and 32768. Invalid value: %i\n",
-                          _virtq_max_num);
+              Err().printf("Max number of virtqueue buffers must be power of 2"
+                           " between 1 and 32768. Invalid value %i or argument "
+                           "%s\n",
+                           _virtq_max_num, optarg);
               return -1;
             }
           info.printf("Max number of buffers in virtqueue: %i\n",
                       _virtq_max_num);
           break;
         case 'p':
-          _max_ports = atoi(optarg);
-          info.printf("Max number of ports: %u\n", _max_ports);
+          if (parse_int_optstring(optarg, &_max_ports))
+            info.printf("Max number of ports: %u\n", _max_ports);
+          else
+            {
+              Err().printf("Invalid number of ports argument: %s\n", optarg);
+              return -1;
+            }
           break;
         case 'q':
           verbosity = Dbg::Quiet;

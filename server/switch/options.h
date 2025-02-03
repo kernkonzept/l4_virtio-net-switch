@@ -10,8 +10,13 @@
 
 #include <memory>
 #include <vector>
+#include <cerrno>
+#include <climits>
 
 #include <l4/re/dataspace>
+
+bool
+parse_int_optstring(char const *optstring, int *out);
 
 class Options
 {
