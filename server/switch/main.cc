@@ -560,6 +560,11 @@ int main(int argc, char *argv[])
 {
   trusted_dataspaces = std::make_shared<Ds_vector>();
   auto *opts = Options::parse_options(argc, argv, trusted_dataspaces);
+  if (!opts)
+    {
+      Err().printf("Error during command line parsing.\n");
+      return 1;
+    }
 
   // Show welcome message if debug level is not set to quiet
   if (Dbg(Dbg::Core, Dbg::Warn).is_active())
@@ -572,7 +577,7 @@ int main(int argc, char *argv[])
   if (!cap.is_valid())
     {
       Err().printf("error registering switch\n");
-      return 1;
+      return 2;
     }
 
   /*

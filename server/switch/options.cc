@@ -200,6 +200,7 @@ Options::parse_options(int argc, char **argv,
                        std::shared_ptr<Ds_vector> trusted_dataspaces)
 {
   if (options.parse_cmd_line(argc, argv, trusted_dataspaces) < 0)
-    throw L4::Runtime_error(-L4_EINVAL, "Invalid command line option");
+    return nullptr;
+
   return &options;
 }
