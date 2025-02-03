@@ -457,11 +457,9 @@ public:
                                         " of data spaces: 0 < %d <= 80\n", num_ds);
                 return -L4_EINVAL;
               }
-            continue;
           }
-
-        if (!handle_opt_arg(opt, monitor, name, sizeof(name), vlan_access,
-                            vlan_trunk, mac, mac_set))
+        else if (!handle_opt_arg(opt, monitor, name, sizeof(name), vlan_access,
+                                 vlan_trunk, mac, mac_set))
           return -L4_EINVAL;
 
         ++arg_n;
