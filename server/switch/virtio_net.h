@@ -218,6 +218,12 @@ public:
     dump_features(info, hdr->driver_features_map);
   }
 
+  bool check_features() override
+  {
+    _negotiated_features = _dev_config.negotiated_features(0);
+    return true;
+  }
+
   bool device_needs_reset() const
   { return _dev_config.status().device_needs_reset(); }
 
@@ -293,6 +299,9 @@ public:
       q.kick_disable_and_remember();
   }
 
+  Features negotiated_features() const
+  { return _negotiated_features; }
+
   /** Getter for the transmission queue. */
   Virtqueue *tx_q() { return &_q[Tx]; }
   /** Getter for the receive queue. */
@@ -303,6 +312,7 @@ public:
   Virtqueue const *rx_q() const { return &_q[Rx]; }
 
 private:
+  Features _negotiated_features;
   /** Maximum number of entries in a virtqueue that is used by the port */
   unsigned _vq_max;
   /** the two used virtqueues */

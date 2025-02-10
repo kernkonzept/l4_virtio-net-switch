@@ -261,13 +261,20 @@ public:
 
             total += mangle.copy_pkt(dst, src_buf);
           }
-        else
+        else if (negotiated_features().mrg_rxbuf())
           {
             // save descriptor information for later
             trace.printf("\tSaving descriptor for later\n");
             consumed.push_back(Consumed_entry(dst_head, total));
             total = 0;
             dst_head = L4virtio::Svr::Virtqueue::Head_desc();
+          }
+        else
+          {
+            trace.printf("\tTransfer failed, destination buffer too small, dropping.\n");
+            // Abort incomplete transfer.
+            dst_queue->rewind_avail(dst_head);
+            return Result::Dropped;
           }
       }
 
