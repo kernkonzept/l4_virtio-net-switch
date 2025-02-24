@@ -200,22 +200,24 @@ public:
             ++num_merged;
           }
 
-        bool has_next_dst_buffer = false;
-        try
-          {
-            has_next_dst_buffer = dst_req_proc.next(dst_dev->mem_info(), &dst);
-          }
-        catch (L4virtio::Svr::Bad_descriptor &e)
-          {
-            Dbg(Dbg::Request, Dbg::Warn, "REQ")
-              .printf("%s: bad descriptor exception: %s - %i"
-                      " -- signal device error in destination device %p.\n",
-                      __PRETTY_FUNCTION__, e.message(), e.error, dst_dev);
-            dst_dev->device_error();
-            return Result::Exception; // Must not touch the dst queues anymore.
-          }
+        bool has_dst_buffer = !dst.done();
+        if (!has_dst_buffer)
+          try
+            {
+              // The current dst buffer is full, try to get next chained buffer.
+              has_dst_buffer = dst_req_proc.next(dst_dev->mem_info(), &dst);
+            }
+          catch (L4virtio::Svr::Bad_descriptor &e)
+            {
+              Dbg(Dbg::Request, Dbg::Warn, "REQ")
+                .printf("%s: bad descriptor exception: %s - %i"
+                        " -- signal device error in destination device %p.\n",
+                        __PRETTY_FUNCTION__, e.message(), e.error, dst_dev);
+              dst_dev->device_error();
+              return Result::Exception; // Must not touch the dst queues anymore.
+            }
 
-        if (!dst.done() || has_next_dst_buffer)
+        if (has_dst_buffer)
           {
             trace.printf("\t: Copying %p#%p:%u (%x) -> %p#%p:%u  (%x)\n",
                          request.dev(),
