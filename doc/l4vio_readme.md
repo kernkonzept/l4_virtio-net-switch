@@ -129,11 +129,12 @@ which has been created earlier.
     An optional monitor port will see packets from an access port as VLAN
     tagged packets with the `<vlan id>` given for the port.
 
-  * `vlan=trunk=[<vlan id>[,<vlan id>]*]`
+  * `vlan=trunk=all|[<vlan id>[,<vlan id>]*]`
 
-    Configures the port as trunk port that participates in the VLANs given as
-    comma separated list. There must be no whitespace in the list. Each id must
-    be a decimal number greater than 0 and less than 4095 in accordance to the
+    Configures the port as trunk port. It participates either in all VLANs, if
+    specified by the keyword 'all', or in the list of VLANs given as comma
+    separated list. There must be no whitespace in the list. Each id must be a
+    decimal number greater than 0 and less than 4095 in accordance to the
     standard. Outgoing packets on this port will be tagged with an IEEE 802.1Q
     compatible tag. Incoming packets must be tagged with a VLAN tag from the
     given list. Packets that have no tag or a tag not in the vlan id list are

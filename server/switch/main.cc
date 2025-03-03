@@ -276,11 +276,15 @@ class Switch_factory : public L4::Epiface_t<Switch_factory, L4::Factory>
    *                          present.
    * \param[out] vlan_trunk   List of VLANs if "vlan=trunk=[<id>[,<id]*] is
    *                          present.
+   * \param[out] vlan_trunk_all
+   *                          Iff true, trunk port shall participate in all
+   *                          VLANs. vlan_trunk will be ignored.
    */
   bool handle_opt_arg(L4::Ipc::Varg const &opt, bool &monitor,
                       char *name, size_t size,
                       l4_uint16_t &vlan_access,
                       std::vector<l4_uint16_t> &vlan_trunk,
+                      bool *vlan_trunk_all,
                       l4_uint8_t mac[6], bool &mac_set)
   {
     assert(opt.is_of<char const *>());
@@ -333,6 +337,11 @@ class Switch_factory : public L4::Epiface_t<Switch_factory, L4::Factory>
                 int next;
                 l4_uint16_t vid;
                 str = str.substr(idx);
+                if (str == cxx::String("all"))
+                {
+                  *vlan_trunk_all = true;
+                  return true;
+                }
                 while ((next = str.from_dec(&vid)))
                   {
                     if (!vlan_valid_id(vid))
@@ -414,6 +423,7 @@ public:
     unsigned arg_n = 2;
     l4_uint16_t vlan_access = 0;
     std::vector<l4_uint16_t> vlan_trunk;
+    bool vlan_trunk_all = false;
 
     // Default MAC address. Might be overridden by a "mac=..." option.
     // First octet: 0x02
@@ -442,7 +452,7 @@ public:
               }
           }
         else if (!handle_opt_arg(opt, monitor, name, sizeof(name), vlan_access,
-                                 vlan_trunk, mac, mac_set))
+                                 vlan_trunk, &vlan_trunk_all, mac, mac_set))
           return -L4_EINVAL;
 
         ++arg_n;
@@ -455,7 +465,7 @@ public:
         return -L4_ENOMEM;
       }
 
-    if (vlan_access && !vlan_trunk.empty())
+    if (vlan_access && (!vlan_trunk.empty() || vlan_trunk_all))
       {
         warn.printf("Port cannot be access and trunk VLAN port simultaneously.\n");
         return -L4_EINVAL;
@@ -513,6 +523,8 @@ public:
 
         if (vlan_access)
           port->set_vlan_access(vlan_access);
+        else if (vlan_trunk_all)
+          port->set_vlan_trunk_all();
         else if (!vlan_trunk.empty())
           port->set_vlan_trunk(vlan_trunk);
       }

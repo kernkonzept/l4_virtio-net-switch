@@ -42,11 +42,12 @@ class Virtio_port : public Virtio_net
    *  - a native port (_vlan_id == VLAN_ID_NATIVE), or
    *  - an access port (_vlan_id set accordingly), or
    *  - a trunk port (_vlan_id == VLAN_ID_TRUNK, _vlan_bloom_filter and
-   *    _vlan_ids populated accordingly).
+   *    _vlan_ids populated accordingly, or _vlan_all == true).
    */
   l4_uint16_t _vlan_id = VLAN_ID_NATIVE; // VID for native/access port
   l4_uint32_t _vlan_bloom_filter = 0; // Bloom filter for trunk ports
   std::set<l4_uint16_t> _vlan_ids;  // Authoritative list of trunk VLANs
+  bool _vlan_all; // This port participates in all VLANs (ignoring _vlan_ids)
 
   inline l4_uint32_t vlan_bloom_hash(l4_uint16_t vid)
   { return 1UL << (vid & 31U); }
@@ -116,6 +117,16 @@ public:
   }
 
   /**
+   * This port shall participate in all VLANs.
+   */
+  void set_vlan_trunk_all()
+  {
+    _vlan_all = true;
+    _vlan_id = VLAN_ID_TRUNK;
+    _vlan_bloom_filter = -1;
+  }
+
+  /**
    * Set this port as monitor port.
    *
    * Ensures that outgoing traffic will have a VLAN tag if the packet belongs
@@ -139,6 +150,10 @@ public:
   {
     // Regular case native/access port
     if (id == _vlan_id)
+      return true;
+
+    // This port participates in all VLANs
+    if (_vlan_all)
       return true;
 
     // Quick check: does port probably accept this VLAN?
@@ -210,7 +225,7 @@ public:
       {
         if (is_trunk())
           {
-            if (_vlan_ids.find(ret->vlan_id()) == _vlan_ids.end())
+            if (!_vlan_all && _vlan_ids.find(ret->vlan_id()) == _vlan_ids.end())
               return std::nullopt;
           }
         else if (is_access() && ret->has_vlan())
