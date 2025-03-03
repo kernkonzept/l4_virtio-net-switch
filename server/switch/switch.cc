@@ -115,20 +115,20 @@ Virtio_switch::handle_tx_request(Port_iface *port, REQ const &request)
     };
 
   Mac_addr src = request.src_mac();
-  _mac_table.learn(src, port);
 
   auto dst = request.dst_mac();
   bool is_broadcast = dst.is_broadcast();
   uint16_t vlan = request.has_vlan() ? request.vlan_id() : port->get_vlan();
+  _mac_table.learn(src, port, vlan);
   if (L4_LIKELY(!is_broadcast))
     {
-      auto *target = _mac_table.lookup(dst);
+      auto *target = _mac_table.lookup(dst, vlan);
       if (target)
         {
           // Do not send packets to the port they came in; they might
           // be sent to us by another switch which does not know how
           // to reach the target.
-          if (target != port && target->match_vlan(vlan))
+          if (target != port)
             {
               handle_request(target, port, request);
               if (_monitor && !filter_request(request))
