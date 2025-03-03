@@ -178,8 +178,10 @@ public:
                sizeof(_dev_config.priv_config()->mac));
 
         hf.mac() = true;
-        Dbg(Dbg::Port, Dbg::Info)
-          .printf("%s: Adding Mac to host features to %x\n", _name, hf.raw);
+        Dbg d(Dbg::Port, Dbg::Info);
+        d.cprintf("%s: Adding Mac '", _name);
+        _mac.print(d);
+        d.cprintf("' to host features to %x\n", hf.raw);
       }
     _dev_config.host_features(0) = hf.raw;
     _dev_config.reset_hdr();
