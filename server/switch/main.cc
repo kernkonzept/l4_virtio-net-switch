@@ -352,7 +352,7 @@ class Switch_factory : public L4::Epiface_t<Switch_factory, L4::Factory>
                     str = str.substr(next+1);
                   }
 
-                if (!str.empty())
+                if (vlan_trunk.empty() || !str.empty())
                   {
                     err.printf("Invalid VLAN trunk port spec '%.*s'\n",
                                opt.length(), opt.data());
