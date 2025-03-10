@@ -48,9 +48,10 @@ public:
   {}
 
   /**
-   * Find the destination port for a MAC address.
+   * Find the destination port for a MAC address and VLAN id.
    *
-   * \param dst  MAC address
+   * \param dst      MAC address
+   * \param vlan_id  VLAN id
    *
    * \retval nullptr  The MAC address is not known (yet)
    * \retval other    Pointer to the destination port
