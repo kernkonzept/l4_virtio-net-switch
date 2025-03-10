@@ -34,6 +34,9 @@ public:
   {
     Ixl::mac_address mac_addr = _dev->get_mac_addr();
     _mac = Mac_addr(reinterpret_cast<char const *>(mac_addr.addr));
+#if CONFIG_STATS
+    _mac.to_array(_stats->mac);
+#endif
   }
 
   // OPTIMIZE: Could use this information for rx batching, i.e. collect while
@@ -60,7 +63,8 @@ public:
       return std::nullopt;
   }
 
-  Result handle_request(Port_iface *src_port, Net_transfer &src) override
+  Result handle_request(Port_iface *src_port, Net_transfer &src,
+                        l4_uint64_t *bytes_transferred) override
   {
     Virtio_vlan_mangle mangle = create_vlan_mangle(src_port);
 
@@ -116,6 +120,7 @@ public:
         mangle.copy_pkt(dst_buf, src_buf);
       }
     buf->size = max_size - dst_buf.left;
+    *bytes_transferred = buf->size;
 
     // Enqueue the pkt_buf at the device.
     if (_dev->tx_batch(0, &buf, 1) == 1)

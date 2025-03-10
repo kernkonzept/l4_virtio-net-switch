@@ -14,4 +14,11 @@ config VNS_IXL
 	help
 	  This enables adding Ixl network ports to the virtual network switch.
 
+config STATS
+  bool "Enable statistics interface"
+  help
+    This enables port statistics.
+
+    If unsure, select N.
+
 endmenu

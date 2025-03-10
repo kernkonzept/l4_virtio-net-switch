@@ -11,6 +11,7 @@
 #include "request.h"
 #include "mac_addr.h"
 #include "vlan.h"
+#include "stats.h"
 
 #include <cassert>
 #include <set>
@@ -23,18 +24,32 @@
 
 class Port_iface
 {
+protected:
+  Virtio_net_switch::Port_statistics *_stats;
+
 public:
   Port_iface(char const *name)
   {
     strncpy(_name, name, sizeof(_name));
     _name[sizeof(_name) - 1] = '\0';
+#ifdef CONFIG_STATS
+    _stats = Switch_statistics::get_instance().allocate_port_statistics(name);
+    if (!_stats)
+      throw L4::Runtime_error(-L4_ENOMEM,
+                              "Could not allocate port statistics.\n");
+#endif
+  }
+
+  virtual ~Port_iface()
+  {
+#ifdef CONFIG_STATS
+    _stats->in_use = false;
+#endif
   }
 
   // delete copy and assignment
   Port_iface(Port_iface const &) = delete;
   Port_iface &operator = (Port_iface const &) = delete;
-
-  virtual ~Port_iface() = default;
 
   char const *get_name() const
   { return _name; }
@@ -191,10 +206,21 @@ public:
   /**
    * Handle a request, i.e. send the request to this port.
    *
+   * \param src_port  Port the request is coming from
+   * \param src       Structure describing the current transfer from src_port
+   *                  to this port
+   * \param bytes_transferred  Amount of data transferred by a successful transfer
+   *
+   * \retval Result::Dropped    Request was dropped
+   * \retval Result::Exception  Request triggered an error condition
+   *                            while handling the target port queue
+   * \retval Result::Delivered  Request was successfully handled
+   *
    * \throws L4virtio::Svr::Bad_descriptor  Exception raised in SRC port queue.
    */
   virtual Result handle_request(Port_iface *src_port,
-                                Net_transfer &src) = 0;
+                                Net_transfer &src,
+                                l4_uint64_t *bytes_transferred) = 0;
 
   void reschedule_pending_tx()
   { _pending_tx_reschedule->trigger(); }
@@ -224,6 +250,35 @@ protected:
 
   Mac_addr _mac = Mac_addr(Mac_addr::Addr_unknown);  /**< The MAC address of the port. */
   char _name[20]; /**< Debug name */
+
+public:
+#ifdef CONFIG_STATS
+  inline void stat_inc_tx_num()
+  { _stats->tx_num++; }
+  inline void stat_inc_tx_dropped()
+  { _stats->tx_dropped++; }
+  inline void stat_inc_tx_bytes(l4_uint64_t bytes)
+  { _stats->tx_bytes += bytes; }
+  inline void stat_inc_rx_num()
+  { _stats->rx_num++; }
+  inline void stat_inc_rx_dropped()
+  { _stats->rx_dropped++; }
+  inline void stat_inc_rx_bytes(l4_uint64_t bytes)
+  { _stats->rx_bytes += bytes; }
+#else
+  inline void stat_inc_tx_num()
+  {}
+  inline void stat_inc_tx_dropped()
+  {}
+  inline void stat_inc_tx_bytes(l4_uint64_t /*bytes*/)
+  {}
+  inline void stat_inc_rx_num()
+  {}
+  inline void stat_inc_rx_dropped()
+  {}
+  inline void stat_inc_rx_bytes(l4_uint64_t /*bytes*/)
+  {}
+#endif
 };
 
 /**\}*/

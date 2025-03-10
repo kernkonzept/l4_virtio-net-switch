@@ -15,6 +15,7 @@
 
 #include <l4/sys/cxx/ipc_epiface>
 #include <l4/sys/cxx/ipc_varg>
+#include <l4/cxx/dlist>
 #include <l4/cxx/string>
 
 #include <vector>
@@ -25,6 +26,7 @@
 #include "options.h"
 #include "switch.h"
 #include "vlan.h"
+#include <l4/virtio-net-switch/stats.h>
 
 /**
  * \defgroup virtio_net_switch Virtio Net Switch
@@ -253,6 +255,86 @@ class Switch_factory : public L4::Epiface_t<Switch_factory, L4::Factory>
     }
   };
 
+  /**
+   * Implement the handler for the statistics reader capability.
+   */
+  class Stats_reader
+    : public cxx::D_list_item,
+      public L4::Epiface_t<Stats_reader, Virtio_net_switch::Statistics_if>
+  {
+    L4Re::Util::Unique_cap<L4Re::Dataspace> _ds;
+    l4_addr_t _addr;
+
+  public:
+    Stats_reader()
+    {
+      l4_size_t size = Switch_statistics::get_instance().size();
+      _ds = L4Re::Util::make_unique_cap<L4Re::Dataspace>();
+      L4Re::chksys(L4Re::Env::env()->mem_alloc()->alloc(size, _ds.get()),
+                   "Could not allocate shared mem ds.");
+      L4Re::chksys(L4Re::Env::env()->rm()->attach(&_addr, _ds->size(),
+                                                  L4Re::Rm::F::Search_addr
+                                                  | L4Re::Rm::F::RW,
+                                                  L4::Ipc::make_cap_rw(_ds.get())));
+
+      memset((void*)_addr, 0, _ds->size());
+    }
+
+    ~Stats_reader()
+    {
+      L4Re::Env::env()->rm()->detach(reinterpret_cast<l4_addr_t>(_addr), 0);
+      server.registry()->unregister_obj(this);
+    }
+
+    long op_get_buffer(Virtio_net_switch::Statistics_if::Rights,
+                       L4::Ipc::Cap<L4Re::Dataspace> &ds)
+    {
+      // We hand out the dataspace in a read only manner. Clients must not be
+      // able to modify information as that would create an unwanted data
+      // channel.
+      ds = L4::Ipc::Cap<L4Re::Dataspace>(_ds.get(), L4_CAP_FPAGE_RO);
+      return L4_EOK;
+    }
+
+    long op_sync(Virtio_net_switch::Statistics_if::Rights)
+    {
+      memcpy(reinterpret_cast<void *>(_addr),
+             reinterpret_cast<void *>(Switch_statistics::get_instance().stats()),
+             Switch_statistics::get_instance().size());
+      return L4_EOK;
+    }
+
+    bool is_valid()
+    { return obj_cap() && obj_cap().validate().label(); }
+  };
+
+  class Stats_reader_list
+  {
+    cxx::D_list<Stats_reader> _readers;
+
+  public:
+    void check_readers()
+    {
+      auto it = _readers.begin();
+      while (it != _readers.end())
+        {
+          auto *reader = *it;
+          if (!reader->is_valid())
+            {
+              it = _readers.erase(it);
+              delete reader;
+            }
+          else
+            ++it;
+        }
+    }
+
+    void push_back(cxx::unique_ptr<Stats_reader> reader)
+    {
+      _readers.push_back(reader.release());
+    }
+  };
+
   /*
    * Handle vanishing caps by telling the switch that a port might have gone
    */
@@ -260,18 +342,26 @@ class Switch_factory : public L4::Epiface_t<Switch_factory, L4::Factory>
   {
   public:
     void handle_irq()
-    { _switch->check_ports(); }
+    {
+      _switch->check_ports();
+      _stats_readers->check_readers();
+    }
 
-    Del_cap_irq(Virtio_switch *virtio_switch) : _switch{virtio_switch} {}
+    Del_cap_irq(Virtio_switch *virtio_switch, Stats_reader_list *stats_readers)
+    : _switch{virtio_switch},
+      _stats_readers{stats_readers}
+    {}
 
   private:
     Virtio_switch *_switch;
+    Stats_reader_list *_stats_readers;
   };
 
   Virtio_switch *_virtio_switch; /**< pointer to the actual net switch object */
 
   /** maximum number of entries in a new virtqueueue created for a port */
   unsigned _vq_max_num;
+  Stats_reader_list _stats_readers;
   Del_cap_irq _del_cap_irq;
 
   /**
@@ -400,7 +490,7 @@ class Switch_factory : public L4::Epiface_t<Switch_factory, L4::Factory>
 public:
   Switch_factory(Virtio_switch *virtio_switch, unsigned vq_max_num)
   : _virtio_switch{virtio_switch}, _vq_max_num{vq_max_num},
-    _del_cap_irq{virtio_switch}
+    _del_cap_irq{virtio_switch, &_stats_readers}
   {
     auto c = L4Re::chkcap(server.registry()->register_irq_obj(&_del_cap_irq));
     L4Re::chksys(L4Re::Env::env()->main_thread()->register_del_irq(c));
@@ -410,22 +500,29 @@ public:
    * Handle factory protocol
    *
    * This function is invoked after an incoming factory::create
-   * request and creates a new port if possible.
+   * request and creates a new port or statistics interface if possible.
    */
   long op_create(L4::Factory::Rights, L4::Ipc::Cap<void> &res,
                  l4_umword_t type, L4::Ipc::Varg_list_ref va)
+  {
+    switch (type)
+      {
+      case 0:
+        return create_port(res, va);
+      case 1:
+        return create_stats(res);
+      default:
+        Dbg(Dbg::Core, Dbg::Warn).printf("op_create: Invalid object type\n");
+        return -L4_EINVAL;
+      }
+  }
+
+  long create_port(L4::Ipc::Cap<void> &res, L4::Ipc::Varg_list_ref va)
   {
     Dbg warn(Dbg::Port, Dbg::Warn, "Port");
     Dbg info(Dbg::Port, Dbg::Info, "Port");
 
     info.printf("Incoming port request\n");
-
-    // test for supported object types
-    if (type != 0)
-      {
-        warn.printf("Invalid object type\n");
-        return -L4_EINVAL;
-      }
 
     bool monitor = false;
     char name[20] = "";
@@ -476,17 +573,11 @@ public:
 
     if (vlan_access && (!vlan_trunk.empty() || vlan_trunk_all))
       {
-        warn.printf("Port cannot be access and trunk VLAN port simultaneously.\n");
+        warn.printf("VLAN port cannot be access and trunk simultaneously.\n");
         return -L4_EINVAL;
       }
 
-    if (name[0])
-      {
-        // append port number
-        unsigned len = strlen(name);
-        snprintf(name + len, sizeof(name) - len, "[%d]", port_num);
-      }
-    else
+    if (!name[0])
       snprintf(name, sizeof(name), "%s[%d]", monitor ? "monitor" : "",
                port_num);
 
@@ -555,6 +646,19 @@ public:
     info.printf("    Created port %s\n", name);
     return L4_EOK;
   };
+
+  long create_stats(L4::Ipc::Cap<void> &res)
+  {
+    // Create a stats reader and throw away our reference to get a notification
+    // when the external reference vanishes.
+    auto reader = cxx::make_unique<Stats_reader>();
+    L4Re::chkcap(server.registry()->register_obj(reader.get()));
+    reader->obj_cap()->dec_refcnt(1);
+    res = L4::Ipc::make_cap(reader->obj_cap(),
+                            L4_CAP_FPAGE_R | L4_CAP_FPAGE_D);
+    _stats_readers.push_back(cxx::move(reader));
+    return L4_EOK;
+  }
 };
 
 #if CONFIG_VNS_IXL
@@ -683,6 +787,11 @@ int main(int argc, char *argv[])
 
   Switch_factory *factory = new Switch_factory(virtio_switch,
                                                opts->get_virtq_max_num());
+
+#ifdef CONFIG_STATS
+  Switch_statistics::get_instance().initialize(opts->get_max_ports());
+#endif
+
   L4::Cap<void> cap = server.registry()->register_obj(factory, "svr");
   if (!cap.is_valid())
     {

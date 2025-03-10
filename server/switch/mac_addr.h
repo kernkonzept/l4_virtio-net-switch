@@ -88,6 +88,16 @@ public:
                    (int)((_mac >> 32) & 0xff), (int)((_mac >> 40) & 0xff));
   }
 
+  void to_array(unsigned char mac[6]) const
+  {
+    mac[0] = _mac & 0xffU;
+    mac[1] = (_mac >> 8) & 0xffU;
+    mac[2] = (_mac >> 16) & 0xffU;
+    mac[3] = (_mac >> 24) & 0xffU;
+    mac[4] = (_mac >> 32) & 0xffU;
+    mac[5] = (_mac >> 40) & 0xffU;
+  }
+
 private:
   /// Mac addresses are 6 bytes long, we use 8 bytes to store them
   uint64_t _mac;

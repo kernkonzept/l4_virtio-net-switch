@@ -1,3 +1,4 @@
+provides: virtio-net-switch
 requires: libstdc++ stdlibs l4virtio-server
 optional: ixl
 maintainer: jean.wolter@kernkonzept.com

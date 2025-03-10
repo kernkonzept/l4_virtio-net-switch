@@ -101,17 +101,42 @@ Virtio_switch::handle_tx_request(Port_iface *port, REQ const &request)
   // Trunk ports are required to have a VLAN tag and only accept packets that
   // belong to a configured VLAN.
   if (port->is_trunk() && !port->match_vlan(request.vlan_id()))
-    return; // Drop packet.
+  {
+    // Drop packet.
+    port->stat_inc_tx_dropped();
+    return;
+  }
 
   // Access ports must not be VLAN tagged to prevent double tagging attacks.
   if (port->is_access() && request.has_vlan())
-    return;  // Drop packet.
+  {
+    // Drop packet.
+    port->stat_inc_tx_dropped();
+    return;
+  }
 
   auto handle_request = [](Port_iface *dst_port, Port_iface *src_port,
                            REQ const &req)
     {
       auto transfer_src = req.transfer_src();
-      dst_port->handle_request(src_port, transfer_src);
+      l4_uint64_t bytes;
+      auto res = dst_port->handle_request(src_port, transfer_src, &bytes);
+      switch (res)
+        {
+        case Port_iface::Result::Delivered:
+          dst_port->stat_inc_tx_num();
+          dst_port->stat_inc_tx_bytes(bytes);
+          src_port->stat_inc_rx_num();
+          src_port->stat_inc_rx_bytes(bytes);
+          break;
+        case Port_iface::Result::Dropped:
+          [[fallthrough]];
+        case Port_iface::Result::Exception:
+          [[fallthrough]];
+        default:
+          dst_port->stat_inc_tx_dropped();
+          break;
+        }
     };
 
   Mac_addr src = request.src_mac();

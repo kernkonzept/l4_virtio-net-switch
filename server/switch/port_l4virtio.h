@@ -64,6 +64,9 @@ public:
     Dbg(Dbg::Port, Dbg::Info)
       .printf("%s: Set host features to %x\n", _name,
               _dev_config.host_features(0));
+#if CONFIG_STATS
+    _mac.to_array(_stats->mac);
+#endif
   }
 
   void rx_notify_disable_and_remember() override
@@ -101,7 +104,8 @@ public:
   void drop_requests()
   { Virtio_net_request::drop_requests(this, tx_q()); }
 
-  Result handle_request(Port_iface *src_port, Net_transfer &src) override
+  Result handle_request(Port_iface *src_port, Net_transfer &src,
+                        l4_uint64_t *bytes_transferred) override
   {
     Virtio_vlan_mangle mangle = create_vlan_mangle(src_port);
 
@@ -111,6 +115,7 @@ public:
     Buffer dst;
     int total = 0;
     l4_uint16_t num_merged = 0;
+    l4_uint64_t total_merged = 0;
     typedef cxx::Pair<L4virtio::Svr::Virtqueue::Head_desc, l4_uint32_t> Consumed_entry;
     std::vector<Consumed_entry> consumed;
 
@@ -266,6 +271,7 @@ public:
             // save descriptor information for later
             trace.printf("\tSaving descriptor for later\n");
             consumed.push_back(Consumed_entry(dst_head, total));
+            total_merged += total;
             total = 0;
             dst_head = L4virtio::Svr::Virtqueue::Head_desc();
           }
@@ -298,6 +304,7 @@ public:
         trace.printf("\tTransfer - Invoke dst_queue->finish()\n");
         dst_header->num_buffers = 1;
         dst_queue->finish(dst_head, dst_dev, total);
+        *bytes_transferred = total;
       }
     else
       {
@@ -305,6 +312,7 @@ public:
         dst_header->num_buffers = num_merged;
         consumed.push_back(Consumed_entry(dst_head, total));
         trace.printf("\tTransfer - Invoke dst_queue->finish(iter)\n");
+        *bytes_transferred = total + total_merged;
         dst_queue->finish(consumed.begin(), consumed.end(), dst_dev);
       }
     return Result::Delivered;
