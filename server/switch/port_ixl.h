@@ -9,8 +9,8 @@
 #include "port.h"
 #include "request_ixl.h"
 
-#include <l4/ixylon/device.h>
-#include <l4/ixylon/memory.h>
+#include <l4/ixl/device.h>
+#include <l4/ixl/memory.h>
 
 #include <optional>
 

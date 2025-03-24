@@ -559,7 +559,7 @@ public:
 
 #if CONFIG_VNS_IXL
 /**
- * Implement the irq related part of an ixylon port.
+ * Implement the irq related part of an ixl port.
  */
 class Ixl_hw_port : public Ixl_port
 {

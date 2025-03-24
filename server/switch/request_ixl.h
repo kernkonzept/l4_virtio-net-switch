@@ -9,7 +9,7 @@
 #include "port.h"
 #include "request.h"
 
-#include <l4/ixylon/memory.h>
+#include <l4/ixl/memory.h>
 
 #include <utility>
 
