@@ -74,7 +74,7 @@ public:
         return Result::Dropped;
       }
 
-    // NOTE: Currently, the switch does not offer checksum or segementation
+    // NOTE: Currently, the switch does not offer checksum or segmentation
     //       offloading to its l4virtio clients, so it is fine to simply ignore
     //       the Virtio_net::Hdr of the request here.
 

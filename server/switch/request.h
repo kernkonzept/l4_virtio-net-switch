@@ -55,7 +55,7 @@ public:
   Buffer &cur_buf() { return _cur_buf; }
 
   /**
-   * Check whether the transer has been completed, i.e. the entire packet data
+   * Check whether the transfer has been completed, i.e. the entire packet data
    * has been copied.
    *
    * \retval false  There is remaining packet data that needs to be copied.

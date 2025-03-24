@@ -72,7 +72,7 @@ parse_int_param(L4::Ipc::Varg const &param, char const *prefix, int *out)
 
   if (!parse_int_optstring(tail.c_str(), out))
     {
-      Err(Err::Normal).printf("Bad paramter '%s'. Invalid number specified.\n",
+      Err(Err::Normal).printf("Bad parameter '%s'. Invalid number specified.\n",
                               prefix);
       throw L4::Runtime_error(-L4_EINVAL);
     }
