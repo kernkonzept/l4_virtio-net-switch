@@ -64,7 +64,7 @@ public:
     Dbg(Dbg::Port, Dbg::Info)
       .printf("%s: Set host features to %x\n", _name,
               _dev_config.host_features(0));
-#if CONFIG_STATS
+#if CONFIG_VNS_STATS
     _mac.to_array(_stats->mac);
 #endif
   }

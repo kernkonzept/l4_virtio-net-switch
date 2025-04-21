@@ -32,7 +32,7 @@ public:
   {
     strncpy(_name, name, sizeof(_name));
     _name[sizeof(_name) - 1] = '\0';
-#ifdef CONFIG_STATS
+#ifdef CONFIG_VNS_STATS
     _stats = Switch_statistics::get_instance().allocate_port_statistics(name);
     if (!_stats)
       throw L4::Runtime_error(-L4_ENOMEM,
@@ -42,7 +42,7 @@ public:
 
   virtual ~Port_iface()
   {
-#ifdef CONFIG_STATS
+#ifdef CONFIG_VNS_STATS
     _stats->in_use = false;
 #endif
   }
@@ -252,7 +252,7 @@ protected:
   char _name[20]; /**< Debug name */
 
 public:
-#ifdef CONFIG_STATS
+#ifdef CONFIG_VNS_STATS
   inline void stat_inc_tx_num()
   { _stats->tx_num++; }
   inline void stat_inc_tx_dropped()

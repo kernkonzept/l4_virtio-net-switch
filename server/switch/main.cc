@@ -788,7 +788,7 @@ int main(int argc, char *argv[])
   Switch_factory *factory = new Switch_factory(virtio_switch,
                                                opts->get_virtq_max_num());
 
-#ifdef CONFIG_STATS
+#ifdef CONFIG_VNS_STATS
   Switch_statistics::get_instance().initialize(opts->get_max_ports());
 #endif
 

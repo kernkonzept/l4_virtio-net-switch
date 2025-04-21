@@ -34,7 +34,7 @@ public:
   {
     Ixl::mac_address mac_addr = _dev->get_mac_addr();
     _mac = Mac_addr(reinterpret_cast<char const *>(mac_addr.addr));
-#if CONFIG_STATS
+#if CONFIG_VNS_STATS
     _mac.to_array(_stats->mac);
 #endif
   }
