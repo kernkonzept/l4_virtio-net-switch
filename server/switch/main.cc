@@ -277,7 +277,7 @@ class Switch_factory : public L4::Epiface_t<Switch_factory, L4::Factory>
                                                   | L4Re::Rm::F::RW,
                                                   L4::Ipc::make_cap_rw(_ds.get())));
 
-      memset((void*)_addr, 0, _ds->size());
+      memset(reinterpret_cast<void*>(_addr), 0, _ds->size());
     }
 
     ~Stats_reader()

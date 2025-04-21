@@ -51,7 +51,7 @@ public:
     _stats->max_ports = num_max_ports;
   }
 
-  struct Virtio_net_switch::Port_statistics *
+  Virtio_net_switch::Port_statistics *
   allocate_port_statistics(char const* name)
   {
     for (unsigned i = 0; i < _stats->max_ports; ++i)
