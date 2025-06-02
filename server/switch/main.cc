@@ -779,6 +779,10 @@ int main(int argc, char *argv[])
 
   Virtio_switch *virtio_switch = new Virtio_switch(opts->get_max_ports());
 
+#ifdef CONFIG_VNS_STATS
+  Switch_statistics::get_instance().initialize(opts->get_max_ports());
+#endif
+
 #if CONFIG_VNS_IXL
   auto vbus = L4Re::Env::env()->get_cap<L4vbus::Vbus>("vbus");
   if (vbus.is_valid())
@@ -787,10 +791,6 @@ int main(int argc, char *argv[])
 
   Switch_factory *factory = new Switch_factory(virtio_switch,
                                                opts->get_virtq_max_num());
-
-#ifdef CONFIG_VNS_STATS
-  Switch_statistics::get_instance().initialize(opts->get_max_ports());
-#endif
 
   L4::Cap<void> cap = server.registry()->register_obj(factory, "svr");
   if (!cap.is_valid())
