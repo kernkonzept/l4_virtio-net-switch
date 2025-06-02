@@ -73,21 +73,6 @@ protected:
 class Net_request
 {
 public:
-  /** Get the Mac address of the destination port. */
-  Mac_addr dst_mac() const
-  {
-    return (_pkt.pos && _pkt.left >= Mac_addr::Addr_length)
-      ? Mac_addr(_pkt.pos)
-      : Mac_addr(Mac_addr::Addr_unknown);
-  }
-
-  /** Get the Mac address of the source port. */
-  Mac_addr src_mac() const
-  {
-    return (_pkt.pos && _pkt.left >= Mac_addr::Addr_length * 2)
-      ? Mac_addr(_pkt.pos + Mac_addr::Addr_length)
-      : Mac_addr(Mac_addr::Addr_unknown);
-  }
 
   bool has_vlan() const
   {
@@ -129,11 +114,11 @@ public:
     Dbg pkt_debug(Dbg::Packet, Dbg::Debug, "PKT");
     if (pkt_debug.is_active())
       {
-        pkt_debug.cprintf("\t");
-        src_mac().print(pkt_debug);
-        pkt_debug.cprintf(" -> ");
-        dst_mac().print(pkt_debug);
-        pkt_debug.cprintf("\n");
+        //pkt_debug.cprintf("\t");
+        //src_mac().print(pkt_debug);
+        //pkt_debug.cprintf(" -> ");
+        //dst_mac().print(pkt_debug);
+        //pkt_debug.cprintf("\n");
 
         Dbg pkt_trace(Dbg::Packet, Dbg::Trace, "PKT");
         if (pkt_trace.is_active() && _pkt.left >= 14)

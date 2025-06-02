@@ -231,6 +231,23 @@ public:
   Virtio_net_transfer transfer_src() const
   { return Virtio_net_transfer(*this); }
 
+  /** Get the Mac address of the destination port. */
+  Mac_addr dst_mac() const
+  {
+    return (_pkt.pos && _pkt.left >= Mac_addr::Addr_length)
+      ? Mac_addr(_pkt.pos)
+      : Mac_addr(Mac_addr::Addr_unknown);
+  }
+
+  /** Get the Mac address of the source port. */
+  Mac_addr src_mac() const
+  {
+    return (_pkt.pos && _pkt.left >= Mac_addr::Addr_length * 2)
+      ? Mac_addr(_pkt.pos + Mac_addr::Addr_length)
+      : Mac_addr(Mac_addr::Addr_unknown);
+  }
+
+
 private:
   /* needed for Virtqueue::finish() */
   /** Source Port */

@@ -39,6 +39,9 @@ public:
            | (((uint64_t)src[4]) << 32) | (((uint64_t)src[5]) << 40);
   }
 
+   static Mac_addr from_uncached(char volatile const *src)
+   { return Mac_addr(src); }
+
   explicit Mac_addr(uint64_t mac) : _mac{mac} {}
 
   Mac_addr(Mac_addr const &other) : _mac{other._mac} {}
@@ -99,6 +102,19 @@ public:
   }
 
 private:
+   explicit Mac_addr(char volatile const *_src)
+   {
+    /* A mac address is 6 bytes long, it is transmitted in big endian
+       order over the network. For our internal representation we
+       focus on easy testability of broadcast/multicast and reorder
+       the bytes that the most significant byte becomes the least
+       significant one. */
+    volatile unsigned char const *src = reinterpret_cast<volatile unsigned char const *>(_src);
+    _mac =    ((uint64_t)src[0])        | (((uint64_t)src[1]) << 8)
+           | (((uint64_t)src[2]) << 16) | (((uint64_t)src[3]) << 24)
+           | (((uint64_t)src[4]) << 32) | (((uint64_t)src[5]) << 40);
+   }
+
   /// Mac addresses are 6 bytes long, we use 8 bytes to store them
   uint64_t _mac;
 };
