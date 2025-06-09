@@ -101,19 +101,19 @@ Virtio_switch::handle_tx_request(Port_iface *port, REQ const &request)
   // Trunk ports are required to have a VLAN tag and only accept packets that
   // belong to a configured VLAN.
   if (port->is_trunk() && !port->match_vlan(request.vlan_id()))
-  {
-    // Drop packet.
-    port->stat_inc_tx_dropped();
-    return;
-  }
+    {
+      // Drop packet.
+      port->stat_inc_tx_dropped();
+      return;
+    }
 
   // Access ports must not be VLAN tagged to prevent double tagging attacks.
   if (port->is_access() && request.has_vlan())
-  {
-    // Drop packet.
-    port->stat_inc_tx_dropped();
-    return;
-  }
+    {
+      // Drop packet.
+      port->stat_inc_tx_dropped();
+      return;
+    }
 
   auto handle_request = [](Port_iface *dst_port, Port_iface *src_port,
                            REQ const &req)
