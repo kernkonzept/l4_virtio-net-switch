@@ -153,7 +153,7 @@ Options::parse_cmd_line(int argc, char **argv,
     info.printf("\t%s\n", argv[i]);
 
   Dbg::set_verbosity(verbosity);
-  while ( (opt = getopt_long(argc, argv, "s:p:mqvD:d:", options, &index)) != -1)
+  while ( (opt = getopt_long(argc, argv, "s:p:mMqvD:d:", options, &index)) != -1)
     {
       switch (opt)
         {
@@ -194,8 +194,10 @@ Options::parse_cmd_line(int argc, char **argv,
           set_verbosity(optarg);
           break;
         case 'm':
-          info.printf("Assigning mac addresses\n");
-          _assign_mac = true;
+          info.printf("Option -m ignored to compatibility.\n");
+          break;
+        case 'M':
+          _assign_mac = false;
           break;
         case 'd':
           {

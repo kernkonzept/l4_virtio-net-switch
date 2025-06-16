@@ -50,8 +50,15 @@ the virtual network switch accepts the following command line options:
 
 * `-m`, `--mac`
 
-  Enable the switch to set the MAC address for each client. An explicitly set
-  MAC address of a port is always forwarded to a client.
+  Ignored. Provided for compatibility with older switch versions.
+
+* `-M`
+
+  Do not assign a random MAC address to ports by default. It is always possible
+  to set an explicit MAC address by passing the `mac=` to the factory call,
+  regardless of this option. If `-M` is passed and no `mac=` address was given,
+  it is the responsibility of the Virtio driver to choose an appropriate
+  address.
 
 * `-p <num>`, `--ports <num>`
 
