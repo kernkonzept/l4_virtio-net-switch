@@ -209,6 +209,11 @@ class Switch_factory : public L4::Epiface_t<Switch_factory, L4::Factory>
         ->unmap(_kick_irq.obj_cap().fpage(),
                 L4_FP_ALL_SPACES | L4_FP_DELETE_OBJ);
       server.registry()->unregister_obj(&_kick_irq);
+
+      L4::Cap<L4::Task>(L4Re::This_task)
+        ->unmap(_pending_tx_reschedule.fpage(),
+                L4_FP_ALL_SPACES | L4_FP_DELETE_OBJ);
+      server.registry()->unregister_obj(&_reschedule_tx_irq);
     }
   };
 
