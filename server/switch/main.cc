@@ -645,7 +645,7 @@ public:
 
     info.printf("    Created port %s\n", name);
     return L4_EOK;
-  };
+  }
 
   long create_stats(L4::Ipc::Cap<void> &res)
   {
