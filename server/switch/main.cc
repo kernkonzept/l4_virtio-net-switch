@@ -18,9 +18,10 @@
 #include <l4/cxx/dlist>
 #include <l4/cxx/string>
 
-#include <vector>
+#include <stdlib.h>
 #include <string>
 #include <terminate_handler-l4>
+#include <vector>
 
 #include "debug.h"
 #include "options.h"
@@ -80,6 +81,24 @@ parse_int_param(L4::Ipc::Varg const &param, char const *prefix, int *out)
     }
 
   return true;
+}
+
+static void
+assign_random_mac(l4_uint8_t mac[6])
+{
+  static bool initialized = false;
+
+  if (!initialized)
+    {
+      srandom(l4_kip_clock(l4re_kip()));
+      initialized = true;
+    }
+
+  for (int i = 0; i < 6; i++)
+    mac[i] = static_cast<l4_uint8_t>(random());
+
+  mac[0] &= ~(1U << 0); // clear multicast bit
+  mac[0] |= 1U << 1;    // set "locally administered" bit
 }
 
 /**
@@ -531,12 +550,7 @@ public:
     std::vector<l4_uint16_t> vlan_trunk;
     bool vlan_trunk_all = false;
 
-    // Default MAC address. Might be overridden by a "mac=..." option.
-    // First octet: 0x02
-    // * bit 0: Individual/Group address bit
-    // * bit 1: Universally/Locally Administered address bit
-    // Last two octets are filled with port number.
-    l4_uint8_t mac[6] = { 0x02, 0x08, 0x0f, 0x2a, 0x00, 0x00 };
+    l4_uint8_t mac[6];
     bool mac_set = false;
     int num_ds = 2;
 
@@ -584,22 +598,11 @@ public:
     info.printf("    Creating port %s%s\n", name,
                 monitor ? " as monitor port" : "");
 
-    if (!mac_set)
-      {
-        // assign a dedicated MAC address to the monitor interface
-        // assuming we will never have more than 57000 (0xdea8) normal
-        // ports
-        if (monitor)
-          {
-            mac[4] = 0xde;
-            mac[5] = 0xad;
-          }
-        else
-          {
-            mac[4] = (l4_uint8_t)(port_num >> 8);
-            mac[5] = (l4_uint8_t)port_num;
-          }
-      }
+    // Assign a random MAC address if we assign one to our devices but the
+    // user has not passed an explicit one for a port.
+    if (!mac_set && Options::get_options()->assign_mac())
+      assign_random_mac(mac);
+
     l4_uint8_t *mac_ptr = (mac_set || Options::get_options()->assign_mac())
                           ? mac : nullptr;
 
