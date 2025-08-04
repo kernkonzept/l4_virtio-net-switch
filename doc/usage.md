@@ -60,7 +60,7 @@ the virtual network switch accepts the following command line options:
 
   Flag. True if provided.
 
-* `-M`
+* `-M`, `--no-random-mac`
 
   Do not assign a random MAC address to ports by default. It is always possible
   to set an explicit MAC address by passing the `mac=` to the factory call,

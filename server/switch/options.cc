@@ -133,13 +133,14 @@ Options::parse_cmd_line(int argc, char **argv,
 
   struct option options[] =
     {
-      {"size",        1, 0, 's' }, // size of in/out queue == #buffers in queue
-      {"ports",       1, 0, 'p' }, // number of ports
-      {"mac",         0, 0, 'm' }, // switch sets MAC address for each client
-      {"debug",       1, 0, 'D' }, // configure debug levels
-      {"verbose",     0, 0, 'v' },
-      {"quiet",       0, 0, 'q' },
-      {"register-ds", 1, 0, 'd' }, // register a trusted dataspace
+      {"size",          1, 0, 's' }, // size of in/out queue == #buffers in queue
+      {"ports",         1, 0, 'p' }, // number of ports
+      {"mac",           0, 0, 'm' }, // switch sets MAC address for each client
+      {"no-random-mac", 0, 0, 'M' }, // don't assign random MAC address to ports by default
+      {"debug",         1, 0, 'D' }, // configure debug levels
+      {"verbose",       0, 0, 'v' },
+      {"quiet",         0, 0, 'q' },
+      {"register-ds",   1, 0, 'd' }, // register a trusted dataspace
       {0, 0, 0, 0}
     };
 
