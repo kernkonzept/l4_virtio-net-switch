@@ -119,9 +119,9 @@ public:
    *
    * \param port    L4virtio_port to handle pending TX work for.
    *
-   * \retval true   Port hit its TX burst limit, and thus a TX pending
+   * \retval false  Port hit its TX burst limit, and thus a TX pending
    *                reschedule notification was queued.
-   * \retval false  Port's entire TX queue was processed.
+   * \retval true   Port's entire TX queue was processed.
    */
   bool handle_l4virtio_port_tx(L4virtio_port *port);
 
@@ -131,9 +131,9 @@ public:
    *
    * \param port    Ixl_port to handle pending TX work for.
    *
-   * \retval true   Port hit its TX burst limit, and thus a TX pending
+   * \retval false  Port hit its TX burst limit, and thus a TX pending
    *                reschedule notification was queued.
-   * \retval false  Port's entire TX queue was processed.
+   * \retval true   Port's entire TX queue was processed.
    */
   bool handle_ixl_port_tx(Ixl_port *port);
 #endif
