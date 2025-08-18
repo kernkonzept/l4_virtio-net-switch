@@ -11,10 +11,9 @@
 #include "filter.h"
 
 Virtio_switch::Virtio_switch(unsigned max_ports)
-: _max_ports{max_ports},
-  _max_used{0}
+: _ports{new Port_iface *[max_ports]()},
+  _max_ports{max_ports}
 {
-  _ports = new Port_iface *[max_ports]();
 }
 
 int

@@ -35,10 +35,10 @@ class Virtio_switch
 {
 private:
   Port_iface **_ports;  /**< Array of ports. */
-  Port_iface *_monitor; /**< The monitor port if there is one. */
+  Port_iface *_monitor = nullptr; /**< The monitor port if there is one. */
 
   unsigned _max_ports;
-  unsigned _max_used;
+  unsigned _max_used = 0;
   Mac_table<> _mac_table;
 
   // Limits the number of consecutive TX requests a port can process before
