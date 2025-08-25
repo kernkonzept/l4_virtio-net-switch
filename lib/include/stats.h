@@ -12,6 +12,9 @@
 #include <l4/re/dataspace>
 #include <l4/re/util/unique_cap>
 
+#include <cstring>
+#include <memory>
+
 namespace Virtio_net_switch {
 
 // Statistics for one port.
