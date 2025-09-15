@@ -387,6 +387,11 @@ class Switch_factory : public L4::Epiface_t<Switch_factory, L4::Factory>
   unsigned _vq_max_num;
   Stats_reader_list _stats_readers;
   Del_cap_irq _del_cap_irq;
+  /**
+   * Port number assigned to the next port that is to be created. This is used
+   * for debugging and in the statistics interface.
+   */
+  unsigned _dbg_port_num = 0;
 
   /**
    * Evaluate an optional argument
@@ -583,8 +588,7 @@ public:
         ++arg_n;
       }
 
-    int port_num = _virtio_switch->port_available(monitor);
-    if (port_num < 0)
+    if (!_virtio_switch->port_available(monitor))
       {
         warn.printf("No port available\n");
         return -L4_ENOMEM;
@@ -597,8 +601,8 @@ public:
       }
 
     if (!name[0])
-      snprintf(name, sizeof(name), "%s[%d]", monitor ? "monitor" : "",
-               port_num);
+      snprintf(name, sizeof(name), "%s[%u]", monitor ? "monitor": "",
+              _dbg_port_num++);
 
     info.printf("    Creating port %s%s\n", name,
                 monitor ? " as monitor port" : "");

@@ -16,6 +16,8 @@
 #include "port_ixl.h"
 #endif
 
+#include <vector>
+
 /**
  * \ingroup virtio_net_switch
  * \{
@@ -34,18 +36,15 @@
 class Virtio_switch
 {
 private:
-  Port_iface **_ports;  /**< Array of ports. */
+  std::vector<Port_iface *> _ports;  /**< Vector of ports. */
   Port_iface *_monitor = nullptr; /**< The monitor port if there is one. */
 
   unsigned _max_ports;
-  unsigned _max_used = 0;
   Mac_table<> _mac_table;
 
   // Limits the number of consecutive TX requests a port can process before
   // being interrupted to ensure fairness to other ports.
   static constexpr unsigned Tx_burst = 128;
-
-  int lookup_free_slot();
 
   /**
    * Deliver a request from a specific port.
@@ -65,16 +64,14 @@ private:
 
   void all_rx_notify_emit_and_enable()
   {
-    for (unsigned idx = 0; idx < _max_ports; ++idx)
-      if (_ports[idx])
-        _ports[idx]->rx_notify_emit_and_enable();
+    for (auto *port : _ports)
+      port->rx_notify_emit_and_enable();
   }
 
   void all_rx_notify_disable_and_remember()
   {
-    for (unsigned idx = 0; idx < _max_ports; ++idx)
-      if (_ports[idx])
-        _ports[idx]->rx_notify_disable_and_remember();
+    for (auto *port: _ports)
+      port->rx_notify_disable_and_remember();
   }
 
 public:
@@ -82,6 +79,7 @@ public:
    * Create a switch with n ports.
    *
    * \param max_ports maximal number of provided ports
+   *
    */
   explicit Virtio_switch(unsigned max_ports);
 
@@ -143,15 +141,15 @@ public:
    *
    * \param monitor  True if we look for a monitor slot.
    *
-   * \retval >=0  The next available port index.
-   * \retval -1   No port available.
+   * \retval true  Port is available.
+   * \retval false No port available.
    */
-  int port_available(bool monitor)
+  bool port_available(bool monitor)
   {
     if (monitor)
-      return !_monitor ? 0 : -1;
+      return _monitor == 0;
 
-    return lookup_free_slot();
+    return _ports.size() < _max_ports;
   }
 };
 /**\}*/

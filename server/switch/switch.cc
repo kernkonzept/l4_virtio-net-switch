@@ -11,27 +11,22 @@
 #include "filter.h"
 
 Virtio_switch::Virtio_switch(unsigned max_ports)
-: _ports{new Port_iface *[max_ports]()},
-  _max_ports{max_ports}
-{
-}
-
-int
-Virtio_switch::lookup_free_slot()
-{
-  for (unsigned idx = 0; idx < _max_ports; ++idx)
-    if (!_ports[idx])
-      return idx;
-
-  return -1;
-}
+: _max_ports(max_ports)
+{}
 
 bool
 Virtio_switch::add_port(Port_iface *port)
 {
+  if (_ports.size() == _max_ports)
+    {
+      Dbg(Dbg::Port, Dbg::Warn)
+        .printf("Port limit (%u) has been reached.\n", _max_ports);
+      return false;
+    }
+
   if (!port->mac().is_unknown())
-    for (unsigned idx = 0; idx < _max_ports; ++idx)
-      if (_ports[idx] && _ports[idx]->mac() == port->mac())
+    for (auto const *p: _ports)
+      if (p->mac() == port->mac())
         {
           Dbg(Dbg::Port, Dbg::Warn)
             .printf("Rejecting port '%s'. MAC address already in use.\n",
@@ -39,15 +34,7 @@ Virtio_switch::add_port(Port_iface *port)
           return false;
         }
 
-  int idx = lookup_free_slot();
-  if (idx < 0)
-    return false;
-
-  unsigned uidx = static_cast<unsigned>(idx);
-  _ports[uidx] = port;
-  if (_max_used == uidx)
-    ++_max_used;
-
+  _ports.push_back(port);
   return true;
 }
 
@@ -69,21 +56,21 @@ Virtio_switch::add_monitor_port(Port_iface *port)
 void
 Virtio_switch::check_ports()
 {
-  for (unsigned idx = 0; idx < _max_used; ++idx)
+  for (std::vector<Port_iface *>::iterator it = _ports.begin();
+       it != _ports.end();)
     {
-      Port_iface *port = _ports[idx];
-      if (port && port->is_gone())
+      auto *port = *it;
+      if (port->is_gone())
         {
           Dbg(Dbg::Port, Dbg::Info)
             .printf("Client on port %p has gone. Deleting...\n", port);
 
-          _ports[idx] = nullptr;
-          if (idx == _max_used-1)
-            --_max_used;
-
           _mac_table.flush(port);
-          delete(port);
+          it = _ports.erase(it);
+          delete port;
         }
+      else
+        ++it;
     }
 
   if (_monitor && _monitor->is_gone())
@@ -164,9 +151,8 @@ Virtio_switch::handle_tx_request(Port_iface *port, REQ const &request)
 
   // It is either a broadcast or an unknown destination - send to all
   // known ports except the source port
-  for (unsigned idx = 0; idx < _max_used && _ports[idx]; ++idx)
+  for (auto *target: _ports)
     {
-      auto *target = _ports[idx];
       if (target != port && target->match_vlan(vlan))
         handle_request(target, port, request);
     }
