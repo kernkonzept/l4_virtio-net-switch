@@ -65,7 +65,7 @@ the virtual network switch accepts the following command line options:
 
   Numerical value.
 
-  Default: `5`
+  Default: `256`
 
 * `-q`, `--quiet`
 

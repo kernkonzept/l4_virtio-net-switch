@@ -43,7 +43,7 @@ public:
   static Options const *get_options();
 
 private:
-  int _max_ports = 5;
+  int _max_ports = 256;
   int _virtq_max_num = 0x100; // default value for data queues
   int _portq_max_num = 50;    // default value for port queues
   int _request_timeout = 1 * 1000 * 1000; // default packet timeout 1 second
