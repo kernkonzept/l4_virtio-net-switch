@@ -77,7 +77,6 @@ cmds:
       The option's parameter is the name of a dataspace capability.
     type: cap
     cap-name: 'dataspace'
-    protocol: 'dataspace'
     multiple: true
 text-after-cmds: |
   The virtual network switch can be setup to feature exactly one monitor port.
@@ -122,7 +121,6 @@ caps:
     type: 'Dataspace'
     protocol: 'dataspace'
     multiple: true
-    provided-by-cmd: 'register-ds'
 
 server-cap-name: svr
 factory:
