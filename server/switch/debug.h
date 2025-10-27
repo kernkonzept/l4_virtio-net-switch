@@ -99,7 +99,7 @@ public:
    */
   using L4Re::Util::Dbg::is_active;
 
-  Dbg(Component c = Core, Verbosity v = Warn, char const *subsys = "")
+  Dbg(Component c = Core, Verbosity v = Warn, char const *subsys = nullptr)
   : L4Re::Util::Dbg(v << (Verbosity_shift * c), "SWI", subsys)
   {}
 
@@ -111,7 +111,7 @@ public:
   static bool is_active(unsigned, unsigned) { return false; }
   using L4Re::Util::Dbg::is_active;
 
-  Dbg(Component c = Core, Verbosity v = Warn, char const *subsys = "")
+  Dbg(Component c = Core, Verbosity v = Warn, char const *subsys = nullptr)
   : L4Re::Util::Dbg(v << (Verbosity_shift * c), "", subsys)
   {}
 
