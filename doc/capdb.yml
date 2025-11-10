@@ -40,7 +40,7 @@ cmds:
     metavar: 'num'
     desc: Set the maximum number of virtual ports.
     type: int
-    default: 5
+    default: 256
   - name: 'quiet'
     short: 'q'
     desc: Silence all output except for error messages.
