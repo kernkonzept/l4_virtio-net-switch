@@ -383,7 +383,7 @@ class Switch_factory : public L4::Epiface_t<Switch_factory, L4::Factory>
 
   Virtio_switch *_virtio_switch; /**< pointer to the actual net switch object */
 
-  /** maximum number of entries in a new virtqueueue created for a port */
+  /** maximum number of entries in a new virtqueue created for a port */
   unsigned _vq_max_num;
   Stats_reader_list _stats_readers;
   Del_cap_irq _del_cap_irq;
