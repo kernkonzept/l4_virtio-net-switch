@@ -15,6 +15,7 @@ comment "Ixl ports not available due to missing libixl"
 config VNS_IXL
 	bool "Support Ixl ports"
 	depends on HAVE_BIDPC_IXL
+	default y
 	help
 	  This enables adding Ixl network ports to the virtual network switch.
 
