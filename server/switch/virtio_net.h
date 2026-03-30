@@ -199,8 +199,8 @@ public:
 
   void dump_features(Dbg const &dbg, const volatile l4_uint32_t *p)
   {
-    dbg.cprintf("%08x:%08x:%08x:%08x:%08x:%08x:%08x:%08x\n",
-                p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[17]);
+    dbg.cprintf("%08x:%08x:%08x:%08x:%08x:%08x\n",
+                p[0], p[1], p[2], p[3], p[4], p[5]);
   }
 
   void dump_features()
