@@ -238,7 +238,7 @@ protected:
   l4_uint16_t _vlan_id = VLAN_ID_NATIVE; // VID for native/access port
   l4_uint32_t _vlan_bloom_filter = 0; // Bloom filter for trunk ports
   std::set<l4_uint16_t> _vlan_ids;  // Authoritative list of trunk VLANs
-  bool _vlan_all; // This port participates in all VLANs (ignoring _vlan_ids)
+  bool _vlan_all = false; // This port participates in all VLANs (ignoring _vlan_ids)
 
   inline l4_uint32_t vlan_bloom_hash(l4_uint16_t vid)
   { return 1UL << (vid & 31U); }
