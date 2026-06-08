@@ -43,7 +43,7 @@ struct Statistics
   struct Port_statistics port_stats[];
 };
 
-class Statistics_if : public L4::Kobject_t<Statistics_if, L4::Kobject, 1>
+class Statistics_if : public L4::Kobject_t<Statistics_if, L4::Kobject>
 {
 public:
   /**
