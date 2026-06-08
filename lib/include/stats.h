@@ -15,34 +15,46 @@
 #include <cstring>
 #include <memory>
 
+/**
+ * \ingroup virtio_net_switch
+ * \file
+ * Client interface for port statistics
+ */
+
 namespace Virtio_net_switch {
 
-// Statistics for one port.
+/// Statistics for one port.
 struct Port_statistics
 {
-  l4_uint64_t tx_num;        // number of successful send requests
-  l4_uint64_t tx_dropped;    // number of dropped send request
-  l4_uint64_t tx_bytes;      // bytes successfully sent
-  l4_uint64_t rx_num;        // number of successful receive requests
-  l4_uint64_t rx_dropped;    // number of dropped receive requests
-  l4_uint64_t rx_bytes;      // bytes successfully received
-  unsigned char mac[6];      // MAC address of a port
-  char          name[20];    // name of a port
-  unsigned char in_use;      // 1 iff the data structure is currently
-                             // in use, 0 otherwise
+  l4_uint64_t tx_num;        ///< number of successful send requests
+  l4_uint64_t tx_dropped;    ///< number of dropped send request
+  l4_uint64_t tx_bytes;      ///< bytes successfully sent
+  l4_uint64_t rx_num;        ///< number of successful receive requests
+  l4_uint64_t rx_dropped;    ///< number of dropped receive requests
+  l4_uint64_t rx_bytes;      ///< bytes successfully received
+  unsigned char mac[6];      ///< MAC address of a port
+  char          name[20];    ///< name of a port
+  unsigned char in_use;      ///< 1 iff the data structure is currently
+                             ///< in use, 0 otherwise
 };
 
-// Base statistics data structure, resides at the beginning of shared memory
+/// Base statistics data structure, resides at the beginning of shared memory
 struct Statistics
 {
-  // This value increases on any change in the data structure. E.g. when a
-  // port on the switch is created or discarded.
-  l4_uint64_t age;
-  // The maximum number of ports that the switch supports.
-  l4_uint64_t max_ports;
-  struct Port_statistics port_stats[];
+  l4_uint64_t age;        ///< This value increases on any change in the data
+                          ///< structure. E.g. when a port on the switch is
+                          ///< created or discarded.
+  l4_uint64_t max_ports;  ///< The maximum number of ports that the switch
+                          ///< supports.
+  struct Port_statistics port_stats[]; ///< Array of Port_statistics.
 };
 
+/**
+ * IPC interface for the statistics interface
+ *
+ * This interface is plumbing used by the Monitor interface. Clients usually
+ * do not invoke this directly.
+ */
 class Statistics_if : public L4::Kobject_t<Statistics_if, L4::Kobject>
 {
 public:
@@ -69,9 +81,12 @@ public:
 };
 
 /**
- * Client interface.
+ * Statistics client interface.
  *
- * The data is only updated on Monitor::sync().
+ * A client can retrieve per port statistics information, such as the number
+ * of sent and received packets. The information is shared with a
+ * L4Re::Dataspace. The information contained in the L4Re::Dataspace is
+ * updated by the switch only on Monitor::sync().
  */
 class Monitor
 {
@@ -95,6 +110,13 @@ public:
     L4Re::Env::env()->rm()->detach(reinterpret_cast<l4_addr_t>(_stats), 0);
   }
 
+  /**
+   * Retrieve pointer to Port_statistics structure
+   *
+   * \param name  The name of the port.
+   * \return      Pointer to the Port_statistics structure or `nullptr` if no
+   *              port of that name was found.
+   */
   Port_statistics *get_port_stats(char const *name) const
   {
     for(size_t i = 0; i < _stats->max_ports; ++i)
@@ -107,6 +129,13 @@ public:
     return nullptr;
   }
 
+  /**
+   * Retrieve the MAC address of a port
+   *
+   * \param      name   The name of the port.
+   * \param[out] mac    A 6 byte buffer allocated by the caller. To be filled
+   *                    with the MAC address of the port.
+   */
   bool get_port_mac(char const *name, unsigned char *mac) const
   {
     for (l4_uint64_t i = 0; i < _stats->max_ports; ++i)
@@ -121,6 +150,9 @@ public:
     return false;
   }
 
+  /**
+   * Instruct the network switch to update the statistics information.
+   */
   void sync() const
   {
     L4Re::chksys(_cap->sync(),

@@ -229,9 +229,25 @@ Call:   `create(0 [, "ds-max=<max>", "name=<name>", "type=<port type>",
   String value.
     * In form xx:xx:xx:xx:xx:xx
 
-If the `create()` call is successful a new capability which references a virtual
-switch port is returned. A client uses this capability to talk to the virtual
-network switch using the Virtio network protocol.
+If the `create()` call is successful, a new capability which references a
+virtual switch port is returned. A client uses this capability to talk to the
+virtual network switch using the Virtio network protocol.
+
+
+## Interface for the switch statistics {#l4re_servers_vio_switch_param_interface_for_the_switch_statistics}
+
+The statistics interface is a privileged interface that allows the client to
+retrieve statistical information about all the virtual network ports of the
+switch. To create a statistics interface, use the factory interface on the
+communication channel called `switch`, which has been created earlier.
+
+Call:   `create(1)`
+
+
+
+If the `create()` call is successful, a new capability which references a
+statistics interface is returned. A client uses this capability to retrieve
+statistical information about the switch.
 
 
 
@@ -251,5 +267,11 @@ net0 = switch:create(0, "ds-max=4", "name=foo", "type=monitor")
 net0 = switch:create(0, "ds-max=4", "name=vl1", "vlan=access=1")
 -- normal port with 4 data spaces as trunk port participating in VLAN 1 & 2
 net0 = switch:create(0, "ds-max=4", "name=vl1", "vlan=trunk=1,2")
+```
+
+Here is an example on how to create a statistics interface:
+```lua
+-- a statistics interface
+stats0 = switch:create(1)
 ```
 

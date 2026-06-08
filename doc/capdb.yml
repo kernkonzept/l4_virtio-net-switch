@@ -132,7 +132,7 @@ factory:
       Ned-Lua function. It has to be called on the communication channel
       called `switch`, which has been created earlier.
     post-desc: |
-      If the `create()` call is successful a new capability which references a
+      If the `create()` call is successful, a new capability which references a
       virtual switch port is returned. A client uses this capability to talk
       to the virtual network switch using the Virtio network protocol.
     params:
@@ -220,6 +220,19 @@ factory:
           - desc: In form xx:xx:xx:xx:xx:xx
             conditions:
               - re.fullmatch(r"([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}", v)
+  - obj-type: '1'
+    return-type: Statistics_if
+    name: Interface for the switch statistics
+    desc: |
+      The statistics interface is a privileged interface that allows the
+      client to retrieve statistical information about all the virtual network
+      ports of the switch. To create a statistics interface, use the factory
+      interface on the communication channel called `switch`, which has been
+      created earlier.
+    post-desc: |
+      If the `create()` call is successful, a new capability which references a
+      statistics interface is returned. A client uses this capability to
+      retrieve statistical information about the switch.
 
 examples: |
   Here are couple of examples on how to create ports with different properties:
@@ -235,4 +248,10 @@ examples: |
   net0 = switch:create(0, "ds-max=4", "name=vl1", "vlan=access=1")
   -- normal port with 4 data spaces as trunk port participating in VLAN 1 & 2
   net0 = switch:create(0, "ds-max=4", "name=vl1", "vlan=trunk=1,2")
+  ```
+
+  Here is an example on how to create a statistics interface:
+  ```lua
+  -- a statistics interface
+  stats0 = switch:create(1)
   ```
