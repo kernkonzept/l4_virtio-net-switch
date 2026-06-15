@@ -7,7 +7,6 @@
 class Switch_statistics
 {
 private:
-  L4Re::Util::Ref_cap<L4Re::Dataspace>::Cap _ds;
   Virtio_net_switch::Statistics *_stats;
   bool _initialized = false;
 
