@@ -132,13 +132,13 @@ traffic passing through the switch is mirrored to the monitor port. The monitor
 port is read-only, and has no TX capability. An optional packet filter can be
 configured and implemented to filter data sent to the monitor port.
 
-## Configuration
+## Configuration {#l4re_servers_vio_switch_config}
 
 Certain features of the virtual network switch are configurable at compile-time.
 Configuration is done through the build-time configuration of the L4Re build
 tree.
 
-## Starting the service
+## Starting the service {#l4re_servers_vio_switch_starting}
 
 The virtual network switch can be started in Ned like this:
 
