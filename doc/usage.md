@@ -108,7 +108,19 @@ the virtual network switch accepts the following command line options:
   possible to communicate with the server via dataspaces other than the
   registered ones. Can be used multiple times for multiple dataspaces.
 
-  The option's parameter is the name of a dataspace capability.
+  You need to ensure to add the dataspace capabilities to the named capabilities
+  table with the same access rights as the clients will later register them,
+  e.g.
+
+  ```
+  ...
+    caps = {
+      ...
+      <cap_name> = vm_ram:m("rw"),
+      ...
+    },
+  ...
+  ```
 
   Can be used multiple times.
 
