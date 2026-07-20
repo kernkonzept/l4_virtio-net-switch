@@ -108,11 +108,11 @@ the virtual network switch accepts the following command line options:
 
   Name of a provided capability that adheres to the dataspace protocol.
 
-<hr> The virtual network switch can be setup to feature exactly one monitor
-port. All traffic passing through the switch is mirrored to the monitor port.
-The monitor port is read-only, and has no TX capability. An optional packet
-filter can be configured and implemented to filter data sent to the monitor
-port.
+<hr>
+The virtual network switch can be setup to feature exactly one monitor port. All
+traffic passing through the switch is mirrored to the monitor port. The monitor
+port is read-only, and has no TX capability. An optional packet filter can be
+configured and implemented to filter data sent to the monitor port.
 
 ## Configuration
 
