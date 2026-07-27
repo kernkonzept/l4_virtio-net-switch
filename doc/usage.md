@@ -24,8 +24,8 @@ The factory of the Virtio Net Switch allows creation of the following objects:
 
   Trusted dataspaces
 
-  Multiple capability names can be provided by the `--register-ds` command line
-  parameter.
+  Multiple capability names can be provided by the `-d <cap_name>`,
+  `--register-ds <cap_name>` command line parameter.
 
 * `svr`
 
@@ -124,7 +124,11 @@ the virtual network switch accepts the following command line options:
 
   Can be used multiple times.
 
-  Name of a provided capability that adheres to the dataspace protocol.
+  This command has the following side effects:
+  - A capability with the given name is expected in the capability space of this
+  task.
+
+  String value.
 
 <hr>
 The virtual network switch can be setup to feature exactly one monitor port. All
@@ -169,8 +173,8 @@ First, a virtual network port has to be created using the following Ned-Lua
 function. It has to be called on the communication channel called `switch`,
 which has been created earlier.
 
-Call:   `create(0 [, "ds-max=<max>", "name=<name>", "type=<port type>",
-"vlan=(access=<vlan id>|trunk=<vlan id>[,<vlan id>]*)", "mac=<addr>"])`
+Call:
+`create(0 [, "ds-max=<max>", "name=<name>", "type=<port type>", "vlan=(access=<vlan id>|trunk=<vlan id>[,<vlan id>]*)", "mac=<addr>"])`
 
 * `"ds-max=<max>"`
 
