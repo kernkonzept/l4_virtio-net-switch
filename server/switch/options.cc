@@ -15,6 +15,7 @@
 #include <l4/cxx/exceptions>
 #include <l4/re/error_helper>
 #include <l4/re/env>
+#include <l4/re/dataspace>
 
 #include "debug.h"
 #include "options.h"
@@ -129,7 +130,7 @@ int
 Options::parse_cmd_line(int argc, char **argv,
                         std::shared_ptr<Ds_vector> trusted_dataspaces)
 {
-  int opt, index;
+  int index;
 
   struct option options[] =
     {
@@ -154,8 +155,21 @@ Options::parse_cmd_line(int argc, char **argv,
     info.printf("\t%s\n", argv[i]);
 
   Dbg::set_verbosity(verbosity);
-  while ( (opt = getopt_long(argc, argv, "s:p:mMqvD:d:", options, &index)) != -1)
+
+  opterr = 0; // prevent getopt_long() from printing its own error message
+  for (;;)
     {
+      int opt = getopt_long(argc, argv, "s:p:mMqvD:d:", options, &index);
+      if (opt == -1)
+        {
+          if (optind < argc)
+            {
+              Err().printf("Unknown parameter '%s'\n", argv[optind]);
+              return -1;
+            }
+          break;
+        }
+
       switch (opt)
         {
         case 's':
@@ -203,14 +217,27 @@ Options::parse_cmd_line(int argc, char **argv,
         case 'd':
           {
             L4::Cap<L4Re::Dataspace> ds =
-              L4Re::chkcap(L4Re::Env::env()->get_cap<L4Re::Dataspace>(optarg),
-                           "Find a dataspace capability.\n");
+              L4Re::Env::env()->get_cap<L4Re::Dataspace>(optarg);
+            if (!ds.is_valid())
+              {
+                Err().printf("Did not find capability for dataspace '%s'. "
+                             "Likely due to a wrong configuration of the"
+                             " capability table.\n", optarg);
+                return -1;
+              }
+
             trusted_dataspaces->push_back(ds);
             break;
           }
         default:
-          Err().printf("Unknown command line option '%c' (%d)\n", opt, opt);
-          return -1;
+          {
+            if (opt == ':')
+              Err().printf("Required argument missing to option '%s'.\n",
+                           argv[optind - 1]);
+            else if (opt == '?')
+              Err().printf("Unrecognized option '%s'.\n", argv[optind - 1]);
+            return -1;
+          }
         }
     }
   return 0;
