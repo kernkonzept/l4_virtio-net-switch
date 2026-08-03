@@ -10,6 +10,12 @@ The virtual network switch connects multiple clients with a virtual network
 connection. It uses Virtio as the transport mechanism. Each virtual switch port
 implements the host-side of a Virtio network device (virtio-net).
 
+## Factory {#l4re_vio_switch_factory}
+
+The factory of the Virtio Net Switch allows creation of the following objects:
+- Virtual switch port, the Virtio network interface
+- Statistics reader
+
 
 <hr>
 ## Capabilities {#l4re_servers_vio_switch_capabilities}
