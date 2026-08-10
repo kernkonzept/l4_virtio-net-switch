@@ -180,9 +180,9 @@ factory:
         type: selection
         options:
           'monitor': Monitor Port
-          'normal': Normal Port
+          'none': Normal Port
         metavar: 'port type'
-        default: 'normal'
+        default: 'none'
       - name: 'vlan'
         desc: |
           Configure the port to participate in an IEEE 802.1Q compatible VLAN.

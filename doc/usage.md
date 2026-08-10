@@ -195,9 +195,9 @@ Call:   `create(0 [, "ds-max=<max>", "name=<name>", "type=<port type>",
 
   Possible values for `<port type>` are
     * `monitor`: Monitor Port
-    * `normal`: Normal Port
+    * `none`: Normal Port
 
-  Default: `normal`
+  Default: `none`
 
 * `"vlan=(access=<vlan id>|trunk=<vlan id>[,<vlan id>]*)"`
 
