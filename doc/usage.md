@@ -167,7 +167,11 @@ To plug hardware devices into the switch, provide a Vbus capability with the
 name `vbus` when starting the switch. To use this feature, you have to enable
 the `VNS_IXL` config option.
 
-## Virtual switch port {#l4re_servers_vio_switch_param_virtual_switch_port}
+
+<hr>
+## Factory Options {#l4re_servers_vio_switch_factory_options}
+
+### Virtual switch port {#l4re_servers_vio_switch_param_virtual_switch_port}
 
 First, a virtual network port has to be created using the following Ned-Lua
 function. It has to be called on the communication channel called `switch`,
@@ -256,7 +260,7 @@ virtual switch port is returned. A client uses this capability to talk to the
 virtual network switch using the Virtio network protocol.
 
 
-## Interface for the switch statistics {#l4re_servers_vio_switch_param_interface_for_the_switch_statistics}
+### Interface for the switch statistics {#l4re_servers_vio_switch_param_interface_for_the_switch_statistics}
 
 The statistics interface is a privileged interface that allows the client to
 retrieve statistical information about all the virtual network ports of the
