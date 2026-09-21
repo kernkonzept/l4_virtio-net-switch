@@ -17,11 +17,9 @@ struct Err : L4Re::Util::Err
 
 class Dbg : public L4Re::Util::Dbg
 {
-  enum
-  {
-    Verbosity_shift = 4, /// Bits per component for verbosity
-    Verbosity_mask = (1UL << Verbosity_shift) - 1
-  };
+  /// Bits per component for verbosity
+  static constexpr unsigned Verbosity_shift = 4;
+  static constexpr unsigned long Verbosity_mask = (1UL << Verbosity_shift) - 1;
 
 public:
   /// Verbosity level per component.
