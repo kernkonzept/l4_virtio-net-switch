@@ -52,6 +52,7 @@ public:
       // copied to the current target descriptor.
       _cur_buf = request.first_buffer();
       _req_id = _request.header();
+      _has_vlan = _request.has_vlan();
     }
 
     // delete copy constructor and copy assignment operator

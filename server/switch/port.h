@@ -84,13 +84,16 @@ public:
   /**
    * Set port as trunk port.
    *
-   * \param ids List of VLAN ids that are switched on this port
+   * \param ids     List of VLAN ids that are switched on this port
+   * \param native  Also switch untagged packets of the native ports
    *
    * Incoming traffic on this port is expected to have a VLAN tag that matches
    * one in \a ids. Outgoing traffic will be tagged it if there is no tag in
-   * the Ethernet header yet.
+   * the Ethernet header yet. If \a native is set, untagged packets of this
+   * port belong to the native ports and packets of native ports are sent to
+   * this port without a VLAN tag.
    */
-  void set_vlan_trunk(const std::vector<l4_uint16_t> &ids)
+  void set_vlan_trunk(const std::vector<l4_uint16_t> &ids, bool native)
   {
     // bloom filter to quickly reject packets that do not belong to this port
     l4_uint32_t filter = 0;
@@ -105,16 +108,20 @@ public:
 
     _vlan_id = VLAN_ID_TRUNK;
     _vlan_bloom_filter = filter;
+    _vlan_native = native;
   }
 
   /**
    * This port shall participate in all VLANs.
+   *
+   * \param native  Also switch untagged packets of the native ports
    */
-  void set_vlan_trunk_all()
+  void set_vlan_trunk_all(bool native)
   {
     _vlan_all = true;
     _vlan_id = VLAN_ID_TRUNK;
     _vlan_bloom_filter = -1;
+    _vlan_native = native;
   }
 
   /**
@@ -143,6 +150,10 @@ public:
     if (id == _vlan_id)
       return true;
 
+    // Untagged packets on a trunk port
+    if (id == VLAN_ID_NATIVE)
+      return _vlan_native;
+
     // This port participates in all VLANs
     if (_vlan_all)
       return true;
@@ -163,29 +174,22 @@ public:
   inline Mac_addr mac() const
   { return _mac; }
 
-  Virtio_vlan_mangle create_vlan_mangle(Port_iface *src_port) const
+  Virtio_vlan_mangle create_vlan_mangle(Port_iface *src_port,
+                                        bool tagged) const
   {
     Virtio_vlan_mangle mangle;
 
     if (is_trunk())
       {
         /*
-         * Add a VLAN tag only if the packet does not already have one (by
-         * coming from another trunk port) or if the packet does not belong to
-         * any VLAN (by coming from a native port). The latter case is only
-         * relevant if this is a monitor port. Otherwise traffic from native
-         * ports is never forwarded to trunk ports.
+         * Only packets of access ports get a VLAN tag. Tagged packets keep
+         * their tag, untagged packets of the native ports stay untagged.
          */
-        if (!src_port->is_trunk() && !src_port->is_native())
+        if (src_port->is_access())
           mangle = Virtio_vlan_mangle::add(src_port->get_vlan());
       }
-    else
-      /*
-       * Remove VLAN tag only if the packet actually has one (by coming from a
-       * trunk port).
-       */
-      if (src_port->is_trunk())
-        mangle = Virtio_vlan_mangle::remove();
+    else if (tagged)
+      mangle = Virtio_vlan_mangle::remove();
 
     return mangle;
   }
@@ -233,12 +237,14 @@ protected:
    *  - a native port (_vlan_id == VLAN_ID_NATIVE), or
    *  - an access port (_vlan_id set accordingly), or
    *  - a trunk port (_vlan_id == VLAN_ID_TRUNK, _vlan_bloom_filter and
-   *    _vlan_ids populated accordingly, or _vlan_all == true).
+   *    _vlan_ids populated accordingly, or _vlan_all == true). With
+   *    _vlan_native == true it also switches untagged packets.
    */
   l4_uint16_t _vlan_id = VLAN_ID_NATIVE; // VID for native/access port
   l4_uint32_t _vlan_bloom_filter = 0; // Bloom filter for trunk ports
   std::set<l4_uint16_t> _vlan_ids;  // Authoritative list of trunk VLANs
   bool _vlan_all = false; // This port participates in all VLANs (ignoring _vlan_ids)
+  bool _vlan_native = false; // Trunk port also switches untagged packets
 
   inline l4_uint32_t vlan_bloom_hash(l4_uint16_t vid)
   { return 1UL << (vid & 31U); }

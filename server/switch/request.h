@@ -42,6 +42,11 @@ public:
   void const *req_id() const { return _req_id; }
 
   /**
+   * Check whether the packet has a VLAN tag.
+   */
+  bool has_vlan() const { return _has_vlan; }
+
+  /**
    * Populate the virtio-net header for the destination.
    */
   virtual void copy_header(Virtio_net::Hdr *dst_header) const = 0;
@@ -68,6 +73,7 @@ public:
 protected:
   Buffer _cur_buf;
   void const *_req_id;
+  bool _has_vlan = false;
 };
 
 class Net_request

@@ -84,8 +84,10 @@ template<typename REQ>
 void
 Virtio_switch::handle_tx_request(Port_iface *port, REQ const &request)
 {
-  // Trunk ports are required to have a VLAN tag and only accept packets that
-  // belong to a configured VLAN.
+  // Trunk ports accept packets that belong to a configured VLAN. Untagged
+  // packets are only accepted if the port also switches the native ports.
+  // All other packets (wrong VLAN / untagged without native switching) are
+  // dropped.
   if (port->is_trunk() && !port->match_vlan(request.vlan_id()))
     {
       // Drop packet.

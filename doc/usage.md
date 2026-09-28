@@ -230,13 +230,15 @@ Call:
     specified by the keyword 'all', or in the list of VLANs given as comma
     separated list. There must be no whitespace in the list. Each id must be a
     decimal number greater than 0 and less than 4095 in accordance to the
-    standard. Outgoing packets on this port will be tagged with an IEEE 802.1Q
-    compatible tag. Incoming packets must be tagged with a VLAN tag from the
-    given list. Packets that have no tag or a tag not in the vlan id list are
-    dropped silently. They are not forwarded to the monitor port either.
-    Currently there is no support for IEEE 802.1p. The PCP and DEI sub-fields in
-    the TCI field will be set to zero on outgoing packets and are ignored for
-    incoming packets.
+    standard. Incoming tagged packets are accepted if their VLAN tag is in the
+    given list. Incoming untagged packets are only accepted if the additional
+    keyword 'native' is in the list: they belong to the native ports (ports
+    without VLAN configuration). All other packets are dropped silently. They
+    are not forwarded to the monitor port either. Outgoing packets on this port
+    are tagged with an IEEE 802.1Q compatible tag of their VLAN. Packets of
+    native ports are sent untagged. Currently there is no support for IEEE
+    802.1p. The PCP and DEI sub-fields in the TCI field will be set to zero on
+    outgoing packets and are ignored for incoming packets.
 
     Numerical value.
 
@@ -287,6 +289,8 @@ net0 = switch:create(0, "ds-max=4", "name=foo", "type=monitor")
 net0 = switch:create(0, "ds-max=4", "name=vl1", "vlan=access=1")
 -- normal port with 4 data spaces as trunk port participating in VLAN 1 & 2
 net0 = switch:create(0, "ds-max=4", "name=vl1", "vlan=trunk=1,2")
+-- trunk port for VLAN 1 & 2 that also switches untagged packets
+net0 = switch:create(0, "ds-max=4", "name=vl1", "vlan=trunk=native,1,2")
 ```
 
 Here is an example on how to create a statistics interface:

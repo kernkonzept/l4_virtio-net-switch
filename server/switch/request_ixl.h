@@ -30,6 +30,7 @@ public:
       _cur_buf = Buffer(reinterpret_cast<char *>(request.buf()->data),
                         request.buf()->size);
       _req_id = _request.buf();
+      _has_vlan = _request.has_vlan();
     }
 
     // delete copy constructor and copy assignment operator

@@ -66,7 +66,8 @@ public:
   Result handle_request(Port_iface *src_port, Net_transfer &src,
                         l4_uint64_t *bytes_transferred) override
   {
-    Virtio_vlan_mangle mangle = create_vlan_mangle(src_port);
+    Virtio_vlan_mangle mangle = create_vlan_mangle(src_port,
+                                                   src.has_vlan());
 
     Dbg trace(Dbg::Request, Dbg::Trace, "REQ-IXL");
     trace.printf("%s: Transfer request %p.\n", _name, src.req_id());

@@ -407,12 +407,16 @@ class Switch_factory : public L4::Epiface_t<Switch_factory, L4::Factory>
    * \param[out] vlan_trunk_all
    *                          Iff true, trunk port shall participate in all
    *                          VLANs. vlan_trunk will be ignored.
+   * \param[out] vlan_trunk_native
+   *                          Iff true, trunk port shall also switch untagged
+   *                          packets of the native ports.
    */
   bool handle_opt_arg(L4::Ipc::Varg const &opt, bool &monitor,
                       char *name, size_t size,
                       l4_uint16_t &vlan_access,
                       std::vector<l4_uint16_t> &vlan_trunk,
                       bool *vlan_trunk_all,
+                      bool *vlan_trunk_native,
                       l4_uint8_t mac[6], bool &mac_set)
   {
     assert(opt.is_of<char const *>());
@@ -462,25 +466,26 @@ class Switch_factory : public L4::Epiface_t<Switch_factory, L4::Factory>
               }
             else if ((idx = str.starts_with("trunk=")))
               {
-                int next;
-                l4_uint16_t vid;
+                bool valid = true;
                 str = str.substr(idx);
-                if (str == cxx::String("all"))
-                {
-                  *vlan_trunk_all = true;
-                  return true;
-                }
-                while ((next = str.from_dec(&vid)))
+                while (valid && !str.empty())
                   {
-                    if (!vlan_valid_id(vid))
-                      break;
-                    vlan_trunk.push_back(vid);
-                    if (next < str.len() && str[next] != ',')
-                      break;
-                    str = str.substr(next+1);
+                    cxx::String::Index sep = str.find(',');
+                    cxx::String item = str.head(sep);
+                    l4_uint16_t vid;
+                    if (item == cxx::String("all"))
+                      *vlan_trunk_all = true;
+                    else if (item == cxx::String("native"))
+                      *vlan_trunk_native = true;
+                    else if (!item.empty() && item.from_dec(&vid) == item.len()
+                             && vlan_valid_id(vid))
+                      vlan_trunk.push_back(vid);
+                    else
+                      valid = false;
+                    str = str.substr(sep + 1);
                   }
 
-                if (vlan_trunk.empty() || !str.empty())
+                if (!valid || (vlan_trunk.empty() && !*vlan_trunk_all))
                   {
                     err.printf("Invalid VLAN trunk port spec '%.*s'\n",
                                opt.length(), opt.data());
@@ -559,6 +564,7 @@ public:
     l4_uint16_t vlan_access = 0;
     std::vector<l4_uint16_t> vlan_trunk;
     bool vlan_trunk_all = false;
+    bool vlan_trunk_native = false;
 
     l4_uint8_t mac[6];
     bool mac_set = false;
@@ -582,7 +588,8 @@ public:
               }
           }
         else if (!handle_opt_arg(opt, monitor, name, sizeof(name), vlan_access,
-                                 vlan_trunk, &vlan_trunk_all, mac, mac_set))
+                                 vlan_trunk, &vlan_trunk_all,
+                                 &vlan_trunk_native, mac, mac_set))
           return -L4_EINVAL;
 
         ++arg_n;
@@ -636,9 +643,9 @@ public:
         if (vlan_access)
           port->set_vlan_access(vlan_access);
         else if (vlan_trunk_all)
-          port->set_vlan_trunk_all();
+          port->set_vlan_trunk_all(vlan_trunk_native);
         else if (!vlan_trunk.empty())
-          port->set_vlan_trunk(vlan_trunk);
+          port->set_vlan_trunk(vlan_trunk, vlan_trunk_native);
       }
 
     port->add_trusted_dataspaces(trusted_dataspaces);
