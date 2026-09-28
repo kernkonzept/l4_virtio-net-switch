@@ -93,8 +93,9 @@ Virtio_switch::handle_tx_request(Port_iface *port, REQ const &request)
       return;
     }
 
-  // Access ports must not be VLAN tagged to prevent double tagging attacks.
-  if (port->is_access() && request.has_vlan())
+  // Access and native ports must not be VLAN tagged to prevent double tagging
+  // and VLAN hopping attacks.
+  if (!port->is_trunk() && request.has_vlan())
     {
       // Drop packet.
       port->stat_inc_tx_dropped();
@@ -129,7 +130,7 @@ Virtio_switch::handle_tx_request(Port_iface *port, REQ const &request)
 
   auto dst = request.dst_mac();
   bool is_broadcast = dst.is_broadcast();
-  uint16_t vlan = request.has_vlan() ? request.vlan_id() : port->get_vlan();
+  uint16_t vlan = port->is_trunk() ? request.vlan_id() : port->get_vlan();
   _mac_table.learn(src, port, vlan);
   if (L4_LIKELY(!is_broadcast))
     {
