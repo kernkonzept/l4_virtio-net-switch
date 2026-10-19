@@ -224,7 +224,7 @@ Call:
     Numerical value.
       * In the range of 0 to 4095 exclusive
 
-  * `"trunk=<vlan id>[, <vlan id>]*"`
+  * `"trunk=<vlan id>[,<vlan id>]*"`
 
     Configures the port as trunk port. It participates either in all VLANs, if
     specified by the keyword 'all', or in the list of VLANs given as comma
