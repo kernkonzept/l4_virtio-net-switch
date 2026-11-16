@@ -122,6 +122,7 @@ public:
 
     Virtio_net *dst_dev = this;
     Virtqueue *dst_queue = rx_q();
+    l4_uint16_t dst_avail_start = dst_queue->next_avail_idx();
     L4virtio::Svr::Virtqueue::Head_desc dst_head;
     L4virtio::Svr::Request_processor dst_req_proc;
     Virtio_net::Hdr *dst_header = nullptr;
@@ -138,13 +139,8 @@ public:
           {
             trace.printf("\tTransfer failed, bad descriptor exception, dropping.\n");
 
-            // Handle partial transfers to destination port.
-            if (!consumed.empty())
-              // Partial transfer, rewind to before first descriptor of transfer.
-              dst_queue->rewind_avail(consumed.at(0).first);
-            else if (dst_head)
-              // Partial transfer, still at first _dst_head.
-              dst_queue->rewind_avail(dst_head);
+            // Return descriptors of a partial transfer to the destination port.
+            dst_queue->rewind_avail(dst_avail_start);
             throw;
           }
 
@@ -163,8 +159,7 @@ public:
               {
                 trace.printf("\tTransfer failed, destination queue depleted, dropping.\n");
                 // Abort incomplete transfer.
-                if (!consumed.empty())
-                  dst_queue->rewind_avail(consumed.front().first);
+                dst_queue->rewind_avail(dst_avail_start);
                 return Result::Dropped;
               }
 
@@ -280,7 +275,7 @@ public:
           {
             trace.printf("\tTransfer failed, destination buffer too small, dropping.\n");
             // Abort incomplete transfer.
-            dst_queue->rewind_avail(dst_head);
+            dst_queue->rewind_avail(dst_avail_start);
             return Result::Dropped;
           }
       }
