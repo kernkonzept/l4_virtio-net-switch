@@ -181,8 +181,15 @@ public:
             if (!dst_header)
               {
                 if (dst.left < sizeof(Virtio_net::Hdr))
-                  throw L4::Runtime_error(-L4_EINVAL,
-                                          "Target buffer too small for header");
+                  {
+                    Dbg(Dbg::Request, Dbg::Warn, "REQ")
+                      .printf("%s: target buffer too small for header"
+                              " -- signal device error in destination device %p.\n",
+                              __PRETTY_FUNCTION__, dst_dev);
+
+                    dst_dev->device_error();
+                    return Result::Exception; // Must not touch the dst queues anymore.
+                  }
                 dst_header = reinterpret_cast<Virtio_net::Hdr *>(dst.pos);
                 trace.printf("\tCopying header to %p (size: %u)\n",
                              dst.pos, dst.left);
